@@ -1,0 +1,11 @@
+numpy>=1.26
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pyyaml>=6.0
+cryptography>=42
+httpx>=0.27
+# optional
+# pyserial>=3.5        # NMEA GNSS over serial
+# SoapySDR             # install from your OS packages (e.g. apt install python3-soapysdr soapysdr-module-hackrf)
+# dev
+pytest>=8

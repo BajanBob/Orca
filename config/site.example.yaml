@@ -1,0 +1,71 @@
+# Orca site configuration. Copy to site.yaml and edit.
+site:
+  name: Barbados regional mesh
+  node: BB-BGI-PORT            # this server's node id
+  region: itu2                 # itu1 | itu2 | itu3 (region pack)
+  lat: 13.103
+  lon: -59.630
+
+data_dir: ./data               # keys, baseline, captures, audit log
+
+# ---- RF hardware -----------------------------------------------------------
+# Simulator (default): runs anywhere, with optional scenarios:
+#   gnss_jam, gnss_spoof, ch16_carrier, new_emitter, repeater_down
+sdr:
+  kind: sim
+  scenarios: [gnss_jam]
+# Real hardware through SoapySDR (receive only), for example:
+# sdr:
+#   kind: soapy
+#   args: "driver=hackrf"      # or driver=rtlsdr, driver=airspy, driver=uhd, driver=rx888
+#   gain: 30                   # omit for AGC
+#   max_rate: 20e6
+
+# Receivers and block downconverters you own. Orca plans coverage DC to Ku
+# from these and shows any gaps. Keys are listed in orca/bands.py.
+inventory:
+  receivers: [sim]             # e.g. [soundcard, rx888, hackrf]
+  frontends: []                # e.g. [c_bdc, x_bdc, ku_lnb_low, ku_lnb_high, ku_bdc]
+
+view: {lo: 1568.0e6, hi: 1583.0e6}   # start on GPS L1 (fits one 16 MHz tune)
+
+# ---- Nodes (Skylark2040 GNSS) ---------------------------------------------
+nodes:
+  - {id: BB-BGI-PORT, name: Bridgetown port,   lat: 13.103, lon: -59.630, tool: Skylark2040, gnss: {kind: sim}}
+  - {id: BB-BGI-HARB, name: Harbour master,    lat: 13.098, lon: -59.636, tool: Skylark2040, gnss: {kind: sim}}
+  - {id: BB-HAST,     name: Hastings,          lat: 13.076, lon: -59.600, tool: Skylark2040, gnss: {kind: sim}}
+  - {id: BB-GAIA,     name: Airport perimeter, lat: 13.075, lon: -59.492, tool: Skylark2040, gnss: {kind: sim}}
+  # real receivers:
+  # - {id: BB-X, name: ..., lat: .., lon: .., tool: Skylark2040, gnss: {kind: gpsd, host: 127.0.0.1, port: 2947}}
+  # - {id: BB-Y, name: ..., lat: .., lon: .., tool: Skylark2040, gnss: {kind: nmea, device: /dev/ttyACM0, baud: 9600}}
+
+# ---- Tradewind Commander (APRS) -------------------------------------------
+aprs:
+  mode: sim                    # sim | kiss (Direwolf/TNC) | aprsis (receive only)
+  host: 127.0.0.1
+  port: 8001
+  callsign: ""                 # your licensed callsign; needed to transmit
+  transmit: false              # bulletins stay "not sent" until true AND callsign set
+  aprsis_filter: r/13.1/-59.6/100
+  watch:                       # stations that should be heard regularly
+    - {call: 8P6RT-7, every_s: 60}
+
+# ---- Uranus (WSJT-X UDP: FT8/FT4/WSPR) -------------------------------------
+uranus: {mode: sim, port: 2237}  # mode: sim | udp
+
+# ---- Network (syslog) ---------------------------------------------------------
+syslog: {mode: sim, port: 5514}   # mode: sim | udp
+
+# Extra channels to protect at this site (added to the global distress list)
+protected_extra:
+  - {name: "Holetown EmComm 147.000", lo: 146.994e6, hi: 147.006e6}
+
+anomaly_z: 6.0
+
+agent:
+  autorun_safe_steps: true     # Beryl runs non-transmitting steps itself
+  llm:
+    enabled: false             # true + ANTHROPIC_API_KEY env var for richer triage notes
+    model: claude-sonnet-5-5
+
+server: {host: 0.0.0.0, port: 8088}

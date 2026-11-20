@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orca Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: an operations console — calm, exact, urgent only where it matters.
+   IDEA: an orca's markings: near-black and white fields, one sea accent, red reserved for threats.
+   PICTURE: live island map with mesh nodes and a jammer location ellipse, beside a scrolling waterfall.
+   COLOUR and TYPE: ink/white ground, sea-teal accent, red/amber for severity; Space Grotesk + Inter.
+   LAYOUT: finding as title, four key figures, map + incident queue, then waterfall + Beryl agent, then nodes, stream, audit. */
+:root{color-scheme:light dark;
+--bg:light-dark(#f4f6f7,#0a0e11);--panel:light-dark(#ffffff,#11171d);--ink:light-dark(#0a0e11,#eef3f5);
+--mute:light-dark(#56626c,#8f9ca7);--line:light-dark(#dbe1e5,#212b34);--sea:light-dark(#0a6c86,#4cc3da);
+--crit:light-dark(#c4221a,#ff5b4f);--warn:light-dark(#9a5c00,#f5a524);--ok:light-dark(#1b7643,#3ccf79);
+--land:light-dark(#e6ebe4,#18231d);--water:light-dark(#d9eaf1,#0a1922)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;overflow-x:clip}
+h1,h2,.num,.brand{font-family:"Space Grotesk",Inter,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;padding:14px max(3vw,16px);border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:700;font-size:22px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.brand svg{width:30px;height:30px}
+.hdr-r{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--mute);font-size:13px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:99px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+.dot.crit{background:var(--crit)}.dot.warn{background:var(--warn)}.dot.off{background:var(--mute)}
+button{font:inherit;font-size:14px;min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--sea);outline-offset:2px}
+button.primary{background:var(--sea);border-color:var(--sea);color:light-dark(#fff,#04141a);font-weight:600}
+button.ghost{background:transparent}
+button:disabled{opacity:.45;cursor:default}
+main{padding:20px max(3vw,16px) 40px;max-width:1400px;margin:0 auto;display:grid;gap:20px}
+.lead h1{margin:0;font-size:clamp(24px,3.2vw,38px);line-height:1.08;text-wrap:balance}
+.lead p{margin:6px 0 0;color:var(--mute)}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+.kpi .num{font-size:clamp(24px,3vw,32px);font-weight:600;line-height:1.1}
+.kpi .lbl{color:var(--mute);font-size:13px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.card h2{margin:0;font-size:17px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.card h2 small{font:400 13px Inter,sans-serif;color:var(--mute)}
+.map{position:relative;aspect-ratio:4/3.4;border-radius:10px;overflow:hidden;background:var(--water)}
+.map svg{position:absolute;inset:0;width:100%;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--mute)}
+.inc{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 12px;align-items:start;text-align:left;padding:12px;min-height:0;width:100%;border-radius:10px}
+.inc.sel{border-color:var(--sea);box-shadow:inset 3px 0 0 var(--sea)}
+.inc .t{font-weight:600}.inc .m{color:var(--mute);font-size:13px;grid-column:2}
+.inc time{color:var(--mute);font-size:13px;white-space:nowrap}
+.sev{font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap;border:1px solid currentColor}
+.sev.critical{color:var(--crit)}.sev.high{color:var(--crit)}.sev.medium{color:var(--warn)}.sev.contained{color:var(--ok)}
+.queue{display:flex;flex-direction:column;gap:8px;max-height:430px;overflow:auto}
+.fig{position:relative;height:260px;border-radius:10px;overflow:hidden;background:#05090c}
+.fig canvas{position:absolute;inset:0;width:100%;height:100%}
+.axis{display:flex;justify-content:space-between;font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+select,input{font:inherit;font-size:16px;min-height:44px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+input{flex:1 1 220px}
+.note{background:var(--bg);border-radius:10px;padding:12px 14px;font-size:14px}
+.note b{font-family:"Space Grotesk",sans-serif}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.steps li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.steps li.done{color:var(--mute)}.steps li.done span::before{content:"✓ ";color:var(--ok);font-weight:700}
+.steps .gate{font-size:12px;color:var(--warn);display:block}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;color:var(--mute);font-weight:500;font-size:13px;border-bottom:1px solid var(--line);padding:6px 8px}
+td{border-bottom:1px solid var(--line);padding:8px;vertical-align:top}
+.stream{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:300px;overflow:auto;display:flex;flex-direction:column}
+.stream div{padding:5px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:70px 120px minmax(0,1fr);gap:8px}
+.stream .c{color:var(--sea)}.stream .h{color:var(--crit)}.stream .w{color:var(--warn)}
+.audit{font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:4px;max-height:200px;overflow:auto}
+.sample{font-size:12px;color:var(--mute)}
+@keyframes pulse{0%{opacity:.85}50%{opacity:.35}100%{opacity:.85}}
+.pulse{animation:pulse 2s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.pulse{animation:none}}
+@media(max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.stream div{grid-template-columns:62px minmax(0,1fr)}.stream div .s{display:none}
+table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px}.stack td{display:flow-root;border:0;padding:3px 0;padding-inline-start:7em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:6.5em;margin-inline-start:-7em;color:var(--mute)}}
+</style>
+<script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 19c4-9 13-13 22-10 2 1 4 3 4 5-3-1-5 0-6 2l-3-4c-1 5-6 9-12 9-2 0-4-1-5-2z" fill="currentColor"/><ellipse cx="21" cy="15" rx="2.2" ry="1.3" fill="var(--panel)"/></svg>
+    Orca <span style="font:500 14px Inter,sans-serif;color:var(--mute)">Barbados regional mesh</span>
+  </div>
+  <div class="hdr-r">
+    <span class="pill"><span class="dot" id="meshDot"></span><span id="meshTxt">Mesh: IP + RF</span></span>
+    <span class="pill">Region pack: ITU Region 2 · BB</span>
+    <button class="ghost" id="gridBtn" type="button">Simulate grid-down</button>
+    <button class="ghost" id="pauseBtn" type="button">Pause feed</button>
+  </div>
+</header>
+
+<main>
+  <section class="lead">
+    <h1 id="finding">1 critical incident: GNSS jamming near Bridgetown port</h1>
+    <p>Beryl agents have triaged it. Three actions are waiting for your approval.</p>
+  </section>
+
+  <section class="kpis">
+    <div class="kpi"><div class="num" id="kNodes">7 / 8</div><div class="lbl">Nodes online</div></div>
+    <div class="kpi"><div class="num" id="kInc">0</div><div class="lbl">Open incidents</div></div>
+    <div class="kpi"><div class="num" id="kEpm">0</div><div class="lbl">Events per minute</div></div>
+    <div class="kpi"><div class="num" id="kEmit">23</div><div class="lbl">Known emitters in library</div></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card">
+      <h2>Situation map <small>Schematic, not to survey scale</small></h2>
+      <div class="map">
+        <svg viewBox="0 0 400 560" role="img" aria-label="Map of Barbados with Orca nodes and incident locations">
+          <path d="M228 22 268 58 298 126 338 196 378 292 372 378 332 458 272 516 204 540 152 504 112 424 92 334 100 244 138 152 182 80Z" fill="var(--land)" stroke="var(--line)" stroke-width="2"/>
+          <g id="links" stroke="var(--sea)" stroke-width="1.2" stroke-dasharray="4 5" opacity=".55"></g>
+          <g id="zones"></g>
+          <g id="nodesG"></g>
+          <text x="20" y="540" font-size="13" fill="var(--mute)">Caribbean Sea</text>
+          <text x="300" y="40" font-size="13" fill="var(--mute)">Atlantic</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="display:inline-block"></span> Node online</span>
+        <span><span class="dot warn" style="display:inline-block"></span> Degraded</span>
+        <span><span class="dot crit" style="display:inline-block"></span> Alerting</span>
+        <span><span class="dot off" style="display:inline-block"></span> Offline</span>
+        <span>Dashed: mesh links · Shaded ellipse: estimated source location</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Incident queue <small id="qCount"></small></h2>
+      <div class="queue" id="queue"></div>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div class="card">
+      <h2>Live spectrum <small id="bandNote"></small></h2>
+      <div class="row">
+        <select id="band" aria-label="Band">
+          <option value="gnss">GNSS L1, Bridgetown port node</option>
+          <option value="vhf">VHF 2 m amateur (APRS, repeaters)</option>
+          <option value="marine">Marine VHF + AIS</option>
+        </select>
+      </div>
+      <div class="fig"><canvas id="wf"></canvas></div>
+      <div class="axis"><span id="fLo"></span><span id="fMid"></span><span id="fHi"></span></div>
+    </div>
+
+    <div class="card">
+      <h2>Beryl agent <small>Proposes · you approve</small></h2>
+      <div id="agent"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Nodes and adapters <small>Skylark2040 · Tradewind Commander · Uranus · network</small></h2>
+    <div class="scroll">
+      <table class="stack">
+        <thead><tr><th>Node</th><th>Tool</th><th>Feeds</th><th>Link</th><th>Status</th></tr></thead>
+        <tbody id="nodeRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div class="card">
+      <h2>Event stream <small>Orca Event Format</small></h2>
+      <div class="row"><input id="oql" placeholder="Filter, e.g. gnss  or  high  or  tradewind" aria-label="Filter events"><button type="button" id="clr">Clear</button></div>
+      <div class="stream" id="stream" aria-live="off"></div>
+    </div>
+    <div class="card">
+      <h2>Audit log <small>Every agent and human action</small></h2>
+      <div class="audit" id="audit"></div>
+      <p class="sample">All data on this page is simulated for demonstration.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+{
+const $ = id => document.getElementById(id);
+const now = () => new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const nodes = [
+  {id:'BB-BGI-PORT', name:'Bridgetown port', tool:'Skylark2040', feeds:'SDR, GNSS', x:142, y:440, link:'IP + LoRa', st:'alert'},
+  {id:'BB-BGI-HARB', name:'Harbour master', tool:'Skylark2040', feeds:'GNSS, AIS', x:120, y:468, link:'LoRa', st:'alert'},
+  {id:'BB-HAST', name:'Hastings', tool:'Skylark2040', feeds:'GNSS, VLF', x:178, y:492, link:'LoRa', st:'alert'},
+  {id:'BB-GAIA', name:'Airport perimeter', tool:'Skylark2040', feeds:'SDR, ADS-B, GNSS', x:300, y:478, link:'IP', st:'ok'},
+  {id:'BB-HOLE', name:'Holetown EmComm', tool:'Tradewind Commander', feeds:'APRS, VHF net', x:112, y:330, link:'VHF/APRS', st:'ok'},
+  {id:'BB-SPEI', name:'Speightstown', tool:'Tradewind Commander', feeds:'APRS, repeater', x:150, y:172, link:'VHF/APRS', st:'warn'},
+  {id:'BB-BATH', name:'Bathsheba HF', tool:'Uranus', feeds:'FT8, WSPR, WEFAX', x:332, y:292, link:'HF + IP', st:'ok'},
+  {id:'BB-SOC', name:'Operations centre', tool:'Orca Command', feeds:'Syslog, firewall, Wi-Fi', x:205, y:400, link:'IP', st:'off'}
+];
+const links = [[0,1],[0,2],[0,7],[1,4],[4,5],[4,6],[6,3],[3,2],[7,3],[5,6]];
+
+const incidents = [
+  {id:'INC-0412', sev:'critical', title:'GNSS jamming cluster + auth failures', where:'Bridgetown port · 3 nodes', t:'13:28', x:150, y:462, rx:34, ry:22,
+   note:'C/N0 on GPS L1 fell 14–18 dB on three port nodes within 90 s. The waterfall shows a swept wideband carrier centred on 1575.42 MHz, consistent with a chirp jammer. Twelve VPN login failures hit the port network in the same window. Two-node TDOA puts the source within about 400 m of the container terminal (confidence 0.91).',
+   steps:[{t:'Task Hastings and Harbour nodes for direction-finding', gate:false},{t:'Send APRS bulletin to the Holetown EmComm net', gate:true},{t:'Lock port VPN to known devices for 2 hours', gate:true},{t:'Send draft report to the spectrum regulator', gate:true}]},
+  {id:'INC-0409', sev:'medium', title:'Repeater beacon missing', where:'Speightstown · 2 m repeater', t:'12:51', x:150, y:172, rx:20, ry:14,
+   note:'The Speightstown repeater ID has not been heard for 3 cycles. Mains power at the site dropped at 12:44 per the node health report, so the repeater may be on a failed battery.',
+   steps:[{t:'Ask net control to move traffic to the simplex backup', gate:true},{t:'Log maintenance ticket for the repeater', gate:false}]}
+];
+const pool = [
+  {sev:'medium', title:'Unknown carrier on marine channel 16', where:'Off Holetown · 156.800 MHz', x:96, y:320, note:'An unmodulated carrier has sat on channel 16 for 41 s, on two nodes. The likely cause is a stuck microphone on a vessel. It doesn\'t match any emitter in the library.', steps:[{t:'Broadcast a stuck-mic advisory on channel 16 via the coast station', gate:true},{t:'Keep monitoring and close if it clears within 5 min', gate:false}]},
+  {sev:'high', title:'Rogue Wi-Fi access point', where:'Airport perimeter', x:296, y:470, note:'A new access point is broadcasting the airport staff network name from outside the fence, and its hardware ID does not match any registered access point. This is a classic credential-harvesting setup.', steps:[{t:'Alert airport IT with device fingerprint and location', gate:true},{t:'Block the BSSID on staff devices', gate:true}]},
+  {sev:'medium', title:'New emitter outside baseline', where:'Bathsheba · 433.92 MHz', x:330, y:300, note:'Short telemetry bursts every 30 s that weren\'t in this site\'s 30-day baseline. They are probably a new weather station or sensor, but they don\'t match the library.', steps:[{t:'Add to emitter library as unidentified', gate:false},{t:'Ask local operators to identify it on the net', gate:true}]}
+];
+
+let selected = 'INC-0412', paused = false, gridDown = false, tick = 0, evTimes = [];
+const events = [], audit = [];
+
+function logAudit(who, what){ audit.unshift(`${now()} · ${who} · ${what}`); $('audit').innerHTML = audit.slice(0,60).map(a=>`<div>${esc(a)}</div>`).join(''); }
+
+function renderMap(){
+  $('links').innerHTML = links.map(([a,b]) => {
+    const A = nodes[a], B = nodes[b];
+    const hide = gridDown && (A.link==='IP' || B.link==='IP');
+    return hide ? '' : `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`;
+  }).join('');
+  $('zones').innerHTML = incidents.filter(i=>i.status!=='contained').map(i =>
+    `<ellipse class="pulse" cx="${i.x}" cy="${i.y}" rx="${i.rx||22}" ry="${i.ry||15}" fill="${i.sev==='medium'?'var(--warn)':'var(--crit)'}" fill-opacity=".22" stroke="${i.sev==='medium'?'var(--warn)':'var(--crit)'}" stroke-width="1.5"/>`).join('');
+  const col = s => s==='alert'?'var(--crit)':s==='warn'?'var(--warn)':s==='off'?'var(--mute)':'var(--ok)';
+  $('nodesG').innerHTML = nodes.map(n => {
+    const st = gridDown && n.link==='IP' ? 'off' : n.st;
+    return `<g><circle cx="${n.x}" cy="${n.y}" r="7" fill="${col(st)}" stroke="var(--panel)" stroke-width="2"/><text x="${n.x+11}" y="${n.y+4}" font-size="12" fill="var(--ink)">${esc(n.name)}</text></g>`;
+  }).join('');
+}
+
+function renderNodes(){
+  const label = {ok:'Online', warn:'Degraded', alert:'Alerting', off:'Offline'};
+  let on = 0;
+  $('nodeRows').innerHTML = nodes.map(n => {
+    const st = gridDown && n.link==='IP' ? 'off' : n.st;
+    if (st!=='off') on++;
+    const cls = st==='alert'?'crit':st==='warn'?'warn':st==='off'?'off':'';
+    return `<tr><td><b>${esc(n.name)}</b><br><span class="sample">${n.id}</span></td><td>${esc(n.tool)}</td><td>${esc(n.feeds)}</td><td>${esc(n.link)}</td><td><span class="pill"><span class="dot ${cls}"></span>${label[st]}</span></td></tr>`;
+  }).join('');
+  $('kNodes').textContent = `${on} / ${nodes.length}`;
+}
+
+function renderQueue(){
+  const open = incidents.filter(i=>i.status!=='contained');
+  $('kInc').textContent = open.length;
+  $('qCount').textContent = `${open.length} open · ${incidents.length - open.length} contained`;
+  const order = {critical:0, high:1, medium:2};
+  const list = [...incidents].sort((a,b)=> (a.status==='contained') - (b.status==='contained') || order[a.sev]-order[b.sev]);
+  $('queue').innerHTML = list.map(i => `<button type="button" class="inc ${i.id===selected?'sel':''}" data-id="${i.id}">
+      <span class="sev ${i.status==='contained'?'contained':i.sev}">${i.status==='contained'?'Contained':i.sev[0].toUpperCase()+i.sev.slice(1)}</span>
+      <span class="t">${esc(i.title)}</span><time>${i.t}</time><span class="m">${i.id} · ${esc(i.where)}</span></button>`).join('');
+  const top = list.find(i=>i.status!=='contained');
+  $('finding').textContent = top ? `${open.length} open incident${open.length>1?'s':''}, top priority: ${top.title.toLowerCase()} (${top.where.split(' · ')[0]})` : 'All clear: no open incidents';
+}
+
+function renderAgent(){
+  const i = incidents.find(x=>x.id===selected);
+  if (!i){ $('agent').innerHTML = '<p class="sample">Select an incident.</p>'; return; }
+  const left = i.steps.filter(s=>!s.done).length;
+  $('agent').innerHTML = `<div class="note"><b>${esc(i.id)} triage</b><br>${esc(i.note)}</div>
+    <ul class="steps">${i.steps.map((s,k)=>`<li class="${s.done?'done':''}"><span>${esc(s.t)}${s.gate&&!s.done?'<span class="gate">Needs your approval</span>':''}</span>
+      ${s.done?'':`<span class="row"><button type="button" class="${s.gate?'primary':''}" data-step="${k}">${s.gate?'Approve':'Run'}</button><button type="button" class="ghost" data-skip="${k}">Skip</button></span>`}</li>`).join('')}</ul>
+    <p class="sample">${left ? `${left} step${left>1?'s':''} remaining.` : 'Playbook complete; incident contained.'}</p>`;
+}
+
+$('queue').addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (!b) return; selected = b.dataset.id; renderQueue(); renderAgent(); });
+$('agent').addEventListener('click', e => {
+  const i = incidents.find(x=>x.id===selected); if (!i) return;
+  const run = e.target.closest('[data-step]'), skip = e.target.closest('[data-skip]');
+  const k = run ? +run.dataset.step : skip ? +skip.dataset.skip : -1; if (k<0) return;
+  const s = i.steps[k]; s.done = true;
+  logAudit(s.gate ? 'Operator' : 'Beryl agent', `${run ? (s.gate?'approved':'ran') : 'skipped'}: ${s.t} (${i.id})`);
+  if (run) pushEvent('orca.agent', `action ${i.id}: ${s.t}`, 'info');
+  if (i.steps.every(x=>x.done)){ i.status='contained'; logAudit('Beryl agent', `${i.id} marked contained`);
+    if (i.id==='INC-0412') nodes.slice(0,3).forEach(n=>n.st='ok');
+    if (i.id==='INC-0409') nodes[5].st='ok'; renderNodes(); renderMap(); }
+  renderQueue(); renderAgent();
+});
+
+const templates = [
+  ['skylark.gnss','rf.gnss.cn0 node=BB-BGI-PORT L1 c/n0={v} dB-Hz','high', () => (24+Math.random()*6).toFixed(1)],
+  ['skylark.gnss','rf.gnss.cn0 node=BB-GAIA L1 c/n0={v} dB-Hz','info', () => (42+Math.random()*4).toFixed(1)],
+  ['tradewind.aprs','aprs.position 8P6{v}-9 via BB-HOLE','info', () => ['AB','RT','ZZ','KM','JD'][Math.floor(Math.random()*5)]],
+  ['tradewind.net','net.checkin Holetown EmComm count={v}','info', () => 6+Math.floor(Math.random()*9)],
+  ['uranus.ft8','ft8.spot 14.074 MHz snr={v} dB grid FK93','info', () => -20+Math.floor(Math.random()*18)],
+  ['uranus.wspr','wspr.spot 10.1387 MHz drift 0 snr={v}','info', () => -28+Math.floor(Math.random()*10)],
+  ['skylark.adsb','adsb.track icao={v} alt FL120 near GAIA','info', () => Math.floor(Math.random()*16777215).toString(16).toUpperCase().padStart(6,'0')],
+  ['skylark.ais','ais.position mmsi 3141{v} speed 9.2 kn','info', () => 10000+Math.floor(Math.random()*89999)],
+  ['net.vpn','auth.fail user=svc-port src=unknown count={v}','warn', () => 1+Math.floor(Math.random()*3)],
+  ['orca.mesh','mesh.sync peers={v} queue 0','info', () => gridDown ? 5 : 8]
+];
+function pushEvent(src, msg, sev){
+  events.unshift({t:now(), src, msg, sev}); if (events.length>200) events.pop();
+  evTimes.push(Date.now()); renderStream();
+}
+function renderStream(){
+  const q = $('oql').value.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = events.filter(e => q.every(w => `${e.src} ${e.msg} ${e.sev}`.toLowerCase().includes(w))).slice(0,80);
+  $('stream').innerHTML = rows.length ? rows.map(e => `<div><span>${e.t}</span><span class="s c">${esc(e.src)}</span><span class="${e.sev==='high'?'h':e.sev==='warn'?'w':''}">${esc(e.msg)}</span></div>`).join('') : '<p class="sample">No events match this filter.</p>';
+}
+$('oql').addEventListener('input', renderStream);
+$('clr').addEventListener('click', () => { $('oql').value=''; renderStream(); });
+
+function simStep(){
+  if (paused) return;
+  tick++;
+  const tp = templates[Math.floor(Math.random()*templates.length)];
+  const jamOpen = incidents[0].status!=='contained';
+  if ((tp[2]==='high' || tp[2]==='warn') && !jamOpen) pushEvent(tp[0], tp[1].replace('{v}', tp[0]==='skylark.gnss' ? (43+Math.random()*3).toFixed(1) : 0), 'info');
+  else pushEvent(tp[0], tp[1].replace('{v}', tp[3]()), tp[2]);
+  if (tick % 14 === 0 && pool.length){
+    const p = pool.shift();
+    const inc = {...p, id:`INC-04${13+(3-pool.length)}`, t:now().slice(0,5), rx:22, ry:15, steps:p.steps.map(s=>({...s}))};
+    incidents.push(inc); logAudit('Orca rules', `raised ${inc.id}: ${inc.title}`); renderQueue(); renderMap();
+  }
+  const cut = Date.now()-60000; evTimes = evTimes.filter(t=>t>cut); $('kEpm').textContent = evTimes.length;
+}
+setInterval(simStep, 1600);
+
+$('pauseBtn').addEventListener('click', () => { paused=!paused; $('pauseBtn').textContent = paused?'Resume feed':'Pause feed'; logAudit('Operator', paused?'paused live feed':'resumed live feed'); });
+$('gridBtn').addEventListener('click', () => {
+  gridDown = !gridDown;
+  $('gridBtn').textContent = gridDown ? 'Restore grid' : 'Simulate grid-down';
+  $('meshTxt').textContent = gridDown ? 'Mesh: RF-only (LoRa, VHF, HF)' : 'Mesh: IP + RF';
+  $('meshDot').className = gridDown ? 'dot warn' : 'dot';
+  logAudit('Orca mesh', gridDown ? 'internet lost: switched to RF-only transport, life-safety traffic first' : 'internet restored: IP transport back');
+  pushEvent('orca.mesh', gridDown ? 'mesh.mode rf-only priority=life-safety' : 'mesh.mode ip+rf', gridDown?'warn':'info');
+  renderMap(); renderNodes();
+});
+
+/* Waterfall */
+const bands = {
+  gnss:{lo:'1565.0 MHz', mid:'1575.42 MHz (L1)', hi:'1586.0 MHz', note:'Jammer sweep visible while INC-0412 is open'},
+  vhf:{lo:'144.0 MHz', mid:'145.0 MHz', hi:'146.0 MHz', note:'APRS 144.39, repeater 145.27'},
+  marine:{lo:'156.0 MHz', mid:'159.0 MHz', hi:'162.1 MHz', note:'Ch 70 DSC, ch 16, AIS 1 and 2'}
+};
+const cv = $('wf'), cx = cv.getContext('2d');
+let W=0, H=0, sweep=0;
+function sizeWf(){ const r = cv.getBoundingClientRect(); W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height)); cv.width=W; cv.height=H; cx.fillStyle='#05090c'; cx.fillRect(0,0,W,H); }
+const wfRO = new ResizeObserver(sizeWf); wfRO.observe(cv);
+function colour(v){ v=Math.max(0,Math.min(1,v));
+  const r = v<.55 ? 5+v*40 : v<.8 ? 27+(v-.55)*900 : 255;
+  const g = v<.55 ? 9+v*330 : v<.8 ? 190+(v-.55)*200 : 240-(v-.8)*600;
+  const b = v<.55 ? 12+v*390 : v<.8 ? 225-(v-.55)*700 : 60;
+  return `rgb(${r|0},${g|0},${b|0})`; }
+function line(){
+  const band = $('band').value, row = new Float32Array(W);
+  for (let x=0;x<W;x++) row[x] = .12+Math.random()*.1;
+  const add = (f, w, a) => { const c=f*W, hw=Math.max(1,w*W); for (let x=Math.max(0,(c-hw*3)|0); x<Math.min(W,(c+hw*3)|0); x++){ const d=(x-c)/hw; row[x]+=a*Math.exp(-d*d); } };
+  if (band==='gnss'){
+    if (incidents[0].status!=='contained'){ sweep=(sweep+0.035)%1; const f=.42+sweep*.16; add(f,.015,.75); for(let x=(W*.38)|0;x<W*.62;x++) row[x]+=.18; }
+  } else if (band==='vhf'){
+    if (Math.random()<.18) add(.195,.006,.8);
+    if (Math.floor(Date.now()/4000)%3!==0) add(.635,.008,.6);
+    if (Math.random()<.05) add(.3+Math.random()*.4,.004,.5);
+  } else {
+    add(.0806,.004,Math.random()<.1?.8:0);
+    add(.129,.006,Math.random()<.35?.7:.05);
+    if (incidents.find(i=>i.title.includes('channel 16') && i.status!=='contained')) add(.131,.002,.8);
+    if (Math.random()<.4) add(.9778,.004,.7);
+    if (Math.random()<.4) add(.9859,.004,.7);
+  }
+  return row;
+}
+function drawWf(){
+  if (W>1 && H>1 && !paused){
+    cx.drawImage(cv,0,0,W,H-2,0,2,W,H-2);
+    const row=line(); for (let x=0;x<W;x++){ cx.fillStyle=colour(row[x]); cx.fillRect(x,0,1,2); }
+  }
+  setTimeout(()=>requestAnimationFrame(drawWf), 70);
+}
+function setBand(){ const b = bands[$('band').value]; $('fLo').textContent=b.lo; $('fMid').textContent=b.mid; $('fHi').textContent=b.hi; $('bandNote').textContent=b.note; }
+$('band').addEventListener('change', setBand);
+
+/* boot */
+logAudit('Orca rules', 'raised INC-0409: Repeater beacon missing');
+logAudit('Orca rules', 'raised INC-0412: GNSS jamming cluster + auth failures');
+logAudit('Beryl agent', 'triaged INC-0412; ran DF tasking proposal');
+for (let k=0;k<12;k++){ const tp=templates[k%templates.length]; pushEvent(tp[0], tp[1].replace('{v}', tp[3]()), tp[2]); }
+setBand(); renderMap(); renderNodes(); renderQueue(); renderAgent(); drawWf();
+}
+</script>
+</body>
+</html>
