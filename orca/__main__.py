@@ -1,5 +1,7 @@
 """Run the Orca server:  python -m orca --config config/site.yaml"""
 import argparse
+import sys
+from pathlib import Path
 
 import uvicorn
 
@@ -13,7 +15,15 @@ def main():
     ap.add_argument("--host")
     ap.add_argument("--port", type=int)
     a = ap.parse_args()
-    cfg = config.load(a.config)
+    path = a.config
+    if not path:   # no --config: use ./site.yaml, else the bundled example (simulator)
+        here = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+        for c in (Path.cwd() / "site.yaml", here / "config" / "site.example.yaml"):
+            if c.exists():
+                path = c
+                break
+    cfg = config.load(path)
+    print(f"Config: {path or 'built-in defaults'}")
     host = a.host or cfg["server"]["host"]
     port = a.port or cfg["server"]["port"]
     print(f"Orca console on http://{host}:{port}  (sdr: {cfg['sdr']['kind']})")

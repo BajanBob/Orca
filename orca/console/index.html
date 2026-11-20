@@ -103,6 +103,7 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
     <span class="pill"><span class="dot" id="connDot"></span><span id="conn">Connecting</span></span>
     <span class="pill"><span class="num" id="epm">0</span>&nbsp;events/min</span>
     <span class="pill num" id="clock">--:--:-- UTC</span>
+    <button id="srvBtn" type="button">Server</button>
     <button id="pauseBtn" type="button">Pause</button>
   </div>
 </header>
@@ -166,6 +167,9 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
   </div>
 </main>
 
+<dialog id="srvDlg"><h2 style="margin-top:0">Connect to an Orca server</h2>
+<p class="muted">Enter the address of the computer running Orca, for example <b>192.168.1.20:8088</b>. Leave it empty to use this page's own server, or demo mode when there is none.</p>
+<form id="srvForm" class="tools"><input id="srvIn" placeholder="host:port" autocomplete="off" autocapitalize="off" spellcheck="false" style="flex:1 1 220px"><button class="pri" type="submit">Connect</button><button type="button" id="srvDemo">Demo mode</button><button type="button" id="srvClose">Cancel</button></form></dialog>
 <dialog id="shotDlg"><h2 style="margin-top:0">Screenshot</h2><img id="shotImg" alt="Console screenshot"><p class="muted" id="shotNote"></p><form method="dialog"><button>Close</button></form></dialog>
 <div class="toast" id="toast" role="status"></div>
 
@@ -188,6 +192,16 @@ const BANDS = [
 const PRESETS = [['GPS L1',1568e6,1583e6],['Marine 16',156.7e6,156.9e6],['APRS',144.29e6,144.49e6],['AIS',161.9e6,162.1e6],
   ['ADS-B',1085e6,1095e6],['FT8 20 m',14.070e6,14.080e6],['VLF stations',15e3,30e3],['Starlink Ku',10.7e9,12.7e9],['Marine radar X',9.3e9,9.5e9]];
 
+/* ---------- server address (desktop app, Android app, or same origin) ---------- */
+const store = {get(k){ try { return localStorage.getItem(k) || ''; } catch { return ''; } }, set(k,v){ try { v ? localStorage.setItem(k,v) : localStorage.removeItem(k); } catch {} }};
+const SRV = (new URLSearchParams(location.search).get('server') || store.get('orca.server')).trim();
+const BASE = SRV ? (/^https?:\/\//.test(SRV) ? SRV : 'http://' + SRV).replace(/\/+$/, '')
+  : (location.protocol === 'http:' || location.protocol === 'https:') && location.host ? location.origin : '';
+$('srvBtn').onclick = () => { $('srvIn').value = store.get('orca.server'); $('srvDlg').showModal(); };
+$('srvClose').onclick = () => $('srvDlg').close();
+$('srvForm').addEventListener('submit', e => { e.preventDefault(); store.set('orca.server', $('srvIn').value.trim()); location.reload(); });
+$('srvDemo').onclick = () => { store.set('orca.server', ''); store.set('orca.demo', '1'); location.reload(); };
+
 /* ---------- rail ---------- */
 $('rail').innerHTML = BANDS.map(b => `<button type="button" data-lo="${b[2]}" data-hi="${b[3]}"><span>${b[1]}</span><small>${fmtS(b[2])} – ${fmtS(b[3])}</small></button>`).join('')
   + '<span class="sep"></span>' + PRESETS.map(p => `<button type="button" data-lo="${p[1]}" data-hi="${p[2]}"><span>${p[0]}</span><small>preset</small></button>`).join('');
@@ -204,9 +218,8 @@ function setView(lo, hi){
   clearTimeout(viewTimer); viewTimer = setTimeout(() => send({cmd:'view', lo, hi}), 120);
 }
 function connect(){
-  if (!location.host || location.protocol === 'file:') return startDemo();
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  let ws; try { ws = new WebSocket(`${proto}://${location.host}/ws`); } catch { return startDemo(); }
+  if (!BASE) return startDemo();
+  let ws; try { ws = new WebSocket(BASE.replace(/^http/, 'ws') + '/ws'); } catch { return startDemo(); }
   const fail = setTimeout(() => { try{ws.close()}catch{}; startDemo(); }, 2500);
   ws.onopen = () => { clearTimeout(fail); S.live = true; S.ws = ws; $('conn').textContent='Live'; $('connDot').className='dot'; };
   ws.onmessage = m => onMsg(JSON.parse(m.data));
@@ -380,7 +393,7 @@ $('shot').onclick = async () => {
   x.font=`${13*dpr}px Inter,sans-serif`;
   x.fillText(`${stamp}${e?` · signal ${fmtF(e.f_center)}, ${fmtBW(e.bw_occ)} occupied, ${e.snr_db.toFixed(1)} dB SNR`:''}`, 12*dpr, c.height - 14*dpr);
   const png = c.toDataURL('image/png'); const meta = {view:S.view, selected:e, ts:Date.now()/1000, incident:S.sel};
-  if (S.live){ try { const r = await fetch('/api/capture/screen', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({png, meta})}); const j = await r.json(); toast(r.ok ? `Saved ${j.name}` : (j.detail||'Save failed')); } catch { toast('Save failed'); } }
+  if (S.live){ try { const r = await fetch(BASE + '/api/capture/screen', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({png, meta})}); const j = await r.json(); toast(r.ok ? `Saved ${j.name}` : (j.detail||'Save failed')); } catch { toast('Save failed'); } }
   else { $('shotImg').src = png; $('shotNote').textContent = 'Demo mode: connected to an Orca server, screenshots are saved with the captures and listed in the audit log.'; $('shotDlg').showModal(); }
 };
 
@@ -424,7 +437,7 @@ const summ = e => { const d=e.data||{}; if (d.message) return d.message; if (d.c
 let sTimer=null; function renderStreamSoon(){ if (!sTimer) sTimer=setTimeout(()=>{sTimer=null; renderStream(); $('epm').textContent = S.health.events_per_min ?? S.events.filter(e=>Date.now()/1000-e.ts<60).length;}, 400); }
 $('filter').addEventListener('input', renderStream);
 function renderAudit(){ $('audit').innerHTML = S.audit.slice(0,80).map(a => `<div><span class="muted">${hhmmss(a.ts)}</span> <b>${esc(a.actor)}</b>: ${esc(a.what)}${a.result?` <span class="muted">→ ${esc(a.result)}</span>`:''}</div>`).join(''); }
-function renderCaps(){ $('caps').innerHTML = S.caps.length ? S.caps.slice(0,40).map(c => `<div>${S.live?`<a href="/api/captures/${encodeURIComponent(c.name)}">${esc(c.name)}</a>`:esc(c.name)} <span class="muted">${(c.bytes/1e6).toFixed(c.bytes<1e5?3:1)} MB</span></div>`).join('') : '<p class="muted">No captures yet. Record IQ, save a spectrum or take a screenshot.</p>'; }
+function renderCaps(){ $('caps').innerHTML = S.caps.length ? S.caps.slice(0,40).map(c => `<div>${S.live?`<a href="${BASE}/api/captures/${encodeURIComponent(c.name)}" target="_blank" rel="noopener">${esc(c.name)}</a>`:esc(c.name)} <span class="muted">${(c.bytes/1e6).toFixed(c.bytes<1e5?3:1)} MB</span></div>`).join('') : '<p class="muted">No captures yet. Record IQ, save a spectrum or take a screenshot.</p>'; }
 function renderHealth(){
   const h = S.health, ad = h.adapters || {};
   const label = k => { if (k.startsWith('gnss:')){ const n = S.nodes.find(x=>'gnss:'+x.id===k); return `${n?n.name:k.slice(5)} <span class="muted">Skylark2040 GNSS</span>`; }

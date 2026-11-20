@@ -1,0 +1,107 @@
+name: Build Windows and Android apps
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt pyinstaller pywebview pyserial
+      - name: Test
+        run: python -m pytest -q
+      - name: Build Orca server (single .exe)
+        run: >
+          pyinstaller --noconfirm --clean --onefile --console --name orca-server
+          --add-data "orca/console;orca/console" --add-data "config;config"
+          --collect-submodules uvicorn --collect-submodules websockets
+          --collect-submodules orca packaging/orca_server.py
+      - name: Build Orca Desktop (windowed app)
+        run: >
+          pyinstaller --noconfirm --clean --onedir --windowed --name OrcaDesktop
+          --add-data "orca/console;orca/console" --add-data "config;config"
+          --collect-submodules uvicorn --collect-submodules websockets
+          --collect-submodules orca --collect-all webview packaging/orca_desktop.py
+      - name: Smoke test the server .exe
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist/orca-server.exe -ArgumentList '--port','8099' -PassThru -NoNewWindow
+          $ok = $false
+          for ($i = 0; $i -lt 40 -and -not $ok; $i++) {
+            Start-Sleep -Seconds 2
+            try { $s = Invoke-RestMethod http://127.0.0.1:8099/api/state; $ok = $s.type -eq 'hello' } catch {}
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { throw "orca-server.exe did not answer" }
+          Write-Host "orca-server.exe answered /api/state"
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item README.md dist/OrcaDesktop/
+          Copy-Item config/site.example.yaml dist/OrcaDesktop/
+          Compress-Archive -Path dist/OrcaDesktop -DestinationPath out/Orca-Desktop-Windows-x64.zip
+          New-Item -ItemType Directory -Force srv | Out-Null
+          Copy-Item dist/orca-server.exe, README.md srv/
+          Copy-Item config/site.example.yaml srv/site.yaml
+          Compress-Archive -Path srv/* -DestinationPath out/Orca-Server-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: out/*
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build APK
+        run: gradle -p android assembleDebug --no-daemon
+      - name: Package
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/Orca-Console-0.2.0.apk
+          (cd out && zip -q Orca-Android-APK.zip Orca-Console-0.2.0.apk && rm Orca-Console-0.2.0.apk)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*
+
+  release:
+    needs: [windows, android]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* -R "${GITHUB_REPOSITORY}" \
+            --title "Orca ${GITHUB_REF_NAME}" \
+            --notes "Orca ${GITHUB_REF_NAME}
+
+          - Orca-Desktop-Windows-x64.zip: unzip and run OrcaDesktop.exe (Windows 10/11, uses the WebView2 runtime). Starts in simulator mode; edit %LOCALAPPDATA%\\Orca\\site.yaml for real hardware.
+          - Orca-Server-Windows-x64.zip: orca-server.exe plus site.yaml. Run it, then open http://<pc-ip>:8088 from any tablet or phone.
+          - Orca-Android-APK.zip: the touch console for Android 7+. Tap Server to connect to your Orca PC; demo mode without one. Debug-signed: allow installs from this source.
+
+          The executables are not code-signed yet, so Windows SmartScreen may warn on first run."

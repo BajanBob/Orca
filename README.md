@@ -4,6 +4,18 @@ Orca is a spectrum-intelligence and security-operations console. Phase 2 connect
 
 With no hardware attached, everything runs on a built-in simulator. That means you can try the full system, and train operators, on any laptop.
 
+## Downloads
+
+Ready-built apps are attached to each [release](https://github.com/BajanBob/orca/releases):
+
+| File | What it is |
+|---|---|
+| `Orca-Desktop-Windows-x64.zip` | Windows 10/11 desktop app. Unzip and run `OrcaDesktop.exe`; the console opens in its own window. Settings live in `%LOCALAPPDATA%\Orca\site.yaml`. |
+| `Orca-Server-Windows-x64.zip` | `orca-server.exe`: a headless server for a control-room PC. Open `http://<pc-ip>:8088` from any tablet, phone or wall screen. |
+| `Orca-Android-APK.zip` | Android 7+ touch console. Tap **Server** to connect to your Orca PC; it runs in demo mode without one. |
+
+The builds come from `.github/workflows/build.yml` whenever a `v*` tag is pushed. The executables are not code-signed yet, so Windows SmartScreen may warn on first run. The APK is debug-signed, so Android asks you to allow installs from that source.
+
 ## Quick start
 
 ```bash
