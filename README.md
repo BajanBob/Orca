@@ -14,7 +14,7 @@ Ready-built apps are attached to each [release](https://github.com/BajanBob/orca
 | `Orca-Server-Windows-x64.zip` | `orca-server.exe`: a headless server for a control-room PC. Open `http://<pc-ip>:8088` from any tablet, phone or wall screen. |
 | `Orca-Android-APK.zip` | Android 7+ touch console. Tap **Server** to connect to your Orca PC; it runs in demo mode without one. |
 
-The builds come from `.github/workflows/build.yml` whenever a `v*` tag is pushed. The executables are not code-signed yet, so Windows SmartScreen may warn on first run. The APK is debug-signed, so Android asks you to allow installs from that source.
+The builds come from `.github/workflows/build.yml` on every push to `main`; the release is named after the version in `orca/__init__.py`. The executables are not code-signed yet, so Windows SmartScreen may warn on first run. The APK is debug-signed, so Android asks you to allow installs from that source.
 
 ## Quick start
 
