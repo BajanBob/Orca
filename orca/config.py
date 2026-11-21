@@ -81,7 +81,7 @@ _Loader.add_implicit_resolver(
 def load(path: str | Path | None) -> dict:
     cfg = DEFAULTS
     if path:
-        cfg = _merge(DEFAULTS, yaml.load(Path(path).read_text(), Loader=_Loader) or {})
+        cfg = _merge(DEFAULTS, yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_Loader) or {})
     cfg = copy.deepcopy(cfg)
     cfg["region_pack"] = REGION_PACKS.get(cfg["site"]["region"], REGION_PACKS["itu2"])
     cfg["protected"] = GLOBAL_PROTECTED + cfg.get("protected_extra", [])

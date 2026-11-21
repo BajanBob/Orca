@@ -105,5 +105,5 @@ def write_report(inc: dict, names: dict, root: Path, site: dict, kind: str = "re
     lines += ["", "Every event above is signed with the node's Ed25519 key; "
               "attached IQ recordings are in SigMF format.", "",
               "Prepared by Orca. Reviewed and approved by the operator before sending."]
-    (root / name).write_text("\n".join(lines))
+    (root / name).write_text("\n".join(lines), encoding="utf-8")
     return name

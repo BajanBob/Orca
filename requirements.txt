@@ -5,7 +5,7 @@ pyyaml>=6.0
 cryptography>=42
 httpx>=0.27
 # optional
-# pyserial>=3.5        # NMEA GNSS over serial
+pyserial>=3.5          # USB/serial radio discovery (IC-9100 CI-V, Yaesu CAT), NMEA GNSS
 # SoapySDR             # install from your OS packages (e.g. apt install python3-soapysdr soapysdr-module-hackrf)
 # dev
 pytest>=8

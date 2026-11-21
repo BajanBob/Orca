@@ -47,7 +47,7 @@ class CaptureStore:
                  "core:label": f"emission {a['bw_occ'] / 1e3:.1f} kHz occ, {a['snr_db']:.1f} dB SNR"}
                 for a in (annotations or [])],
         }
-        (self.root / f"{base}.sigmf-meta").write_text(json.dumps(meta, indent=2))
+        (self.root / f"{base}.sigmf-meta").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         return base
 
     def save_spectrum(self, frame_msg: dict) -> str:
@@ -56,7 +56,7 @@ class CaptureStore:
         n = len(db)
         lines = ["freq_hz,power_db"] + [
             f"{frame_msg['lo'] + (frame_msg['hi'] - frame_msg['lo']) * (i + .5) / n:.0f},{v}" for i, v in enumerate(db)]
-        (self.root / f"{base}.csv").write_text("\n".join(lines))
+        (self.root / f"{base}.csv").write_text("\n".join(lines), encoding="utf-8")
         return base
 
     def save_screen(self, data_url: str, meta: dict) -> str:
@@ -69,7 +69,7 @@ class CaptureStore:
         base = f"orca_{self.node}_{_stamp()}_screen"
         ext = "png" if m.group(1) == "png" else "jpg"
         (self.root / f"{base}.{ext}").write_bytes(raw)
-        (self.root / f"{base}.json").write_text(json.dumps(meta, indent=2))
+        (self.root / f"{base}.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         return f"{base}.{ext}"
 
     def list(self) -> list[dict]:

@@ -82,12 +82,12 @@ class Classifier:
                 "features": dict(zip(FEATURE_NAMES, [round(float(x), 4) for x in feats]))}
 
     def save(self, path):
-        Path(path).write_text(json.dumps({"classes": self.classes, "model": self.model.to_dict()}))
+        Path(path).write_text(json.dumps({"classes": self.classes, "model": self.model.to_dict()}), encoding="utf-8")
 
     @classmethod
     def load_or_train(cls, path=None, rate=2.0e6, n=4096, per_class=120, seed=0):
         if path and Path(path).exists():
-            d = json.loads(Path(path).read_text())
+            d = json.loads(Path(path).read_text(encoding="utf-8"))
             return cls(MLP.from_dict(d["model"]), d["classes"])
         X, y = dataset(per_class, n, rate, seed)
         model = MLP(X.shape[1], 32, len(CLASSES), seed).fit(X, y, epochs=450, lr=0.08)

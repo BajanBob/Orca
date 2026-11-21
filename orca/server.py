@@ -572,11 +572,16 @@ def create_app(cfg: dict) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def index():
-        return CONSOLE.read_text()
+        return CONSOLE.read_text(encoding="utf-8")
 
     @app.get("/api/state")
     async def state():
         return orca.snapshot()
+
+    @app.get("/api/devices")
+    async def devices_list():
+        from . import devices
+        return {"devices": devices.detect()}
 
     @app.get("/api/coverage")
     async def coverage(lo: float = 0, hi: float = 18e9):

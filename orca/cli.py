@@ -14,7 +14,13 @@ def main():
     ap.add_argument("--config", help="site YAML (defaults to the simulator)")
     ap.add_argument("--host")
     ap.add_argument("--port", type=int)
+    ap.add_argument("--devices", action="store_true",
+                    help="list USB/serial radios (HackRF, IC-9100, Yaesu ...) and exit")
     a = ap.parse_args()
+    if a.devices:
+        from . import devices
+        print(devices.report())
+        return
     path = a.config
     if not path:   # no --config: use ./site.yaml, else the bundled example (simulator)
         here = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))

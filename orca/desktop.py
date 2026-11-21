@@ -35,9 +35,9 @@ def site_config() -> Path:
     cfg = home_dir() / "site.yaml"
     if not cfg.exists():
         example = _resource("config/site.example.yaml")
-        text = example.read_text() if example.exists() else ""
+        text = example.read_text(encoding="utf-8") if example.exists() else ""
         text = text.replace("data_dir: ./data", f"data_dir: {(home_dir() / 'data').as_posix()}")
-        cfg.write_text(text)
+        cfg.write_text(text, encoding="utf-8")
     return cfg
 
 

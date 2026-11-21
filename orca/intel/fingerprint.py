@@ -24,7 +24,7 @@ class EmitterLibrary:
         self.emitters: list[dict] = []
         self._scale = None
         if self.path and self.path.exists():
-            self.emitters = json.loads(self.path.read_text())
+            self.emitters = json.loads(self.path.read_text(encoding="utf-8"))
             self._refit()
 
     def _refit(self):
@@ -88,4 +88,4 @@ class EmitterLibrary:
     def _save(self):
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.emitters))
+            self.path.write_text(json.dumps(self.emitters), encoding="utf-8")
