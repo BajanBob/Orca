@@ -226,14 +226,76 @@ def test_radio_transport_kiss_roundtrip_and_quality_gate():
     payload = b'{"t":"ev","ev":{"id":"x"}}'
     rt.feed(kiss_wrap(payload))                       # TNC echoes a framed packet
     assert got and got[0] == payload
-    # with no TNC connected or a dead path, sends are skipped (store-and-forward)
+    # with no TNC connected or a dead path, sends queue (store-and-forward)
     rt.link_quality = 0.0
     rt.send(payload)
-    assert rt.skipped == 1 and rt.sent == 0
+    assert rt.pending == 1 and rt.sent == 0
 
     class W:
         def __init__(self): self.n = 0
         def write(self, d): self.n += 1
     rt._writer = W(); rt.link_quality = 1.0
-    rt.send(payload)
-    assert rt.sent == 1
+    rt.flush()
+    assert rt.pending == 0 and rt.sent == 1
+
+
+# ---------------------------------------------------------------- burst chat
+from orca.chat import BurstChat
+
+
+def _secure_bits():
+    ks = KeyStore()
+    kid, _ = ks.generate()
+    pol = SecurePolicy(region=2, floor_hz=148e6, licensed_bands=[(150e6, 174e6)], authority="LIC-1")
+    return ks, kid, pol
+
+
+def test_burst_chat_clear_delivery():
+    wire = []
+    tx = BurstChat("N1", "8P6ORC", Signer(), wire.append)
+    assert tx.send("net check-in from Barbados", 144.2e6, secure=False)["ok"]
+    rx = BurstChat("N2", "8P6XYZ", Signer(), lambda e: None)
+    assert rx.on_event(wire[-1]) is True
+    assert rx.recent(1)[0]["text"] == "net check-in from Barbados"
+    assert rx.recent(1)[0]["secure"] is False
+
+
+def test_burst_chat_secure_roundtrip_and_boundary():
+    ks, kid, pol = _secure_bits()
+    wire = []
+    tx = BurstChat("N1", "GOV1", Signer(), wire.append, SecureChannel(ks), pol)
+    # refused on an amateur frequency and below the floor
+    assert tx.send("x", 144.39e6, secure=True)["ok"] is False
+    assert tx.send("x", 120e6, secure=True)["ok"] is False
+    # allowed on a licensed, non-amateur band; plaintext is not on the wire
+    r = tx.send("MOVE TO POINT BRAVO", 155e6, secure=True)
+    assert r["ok"] and "MOVE TO POINT" not in str(wire[-1]["data"])
+    # a peer holding the key decrypts it
+    rx = BurstChat("N2", "GOV2", Signer(), lambda e: None, SecureChannel(ks), pol)
+    rx.on_event(wire[-1])
+    assert rx.recent(1)[0]["text"] == "MOVE TO POINT BRAVO" and rx.recent(1)[0]["status"] == "decrypted"
+    # a peer without the key is told, never attacked
+    nokey = BurstChat("N3", "X", Signer(), lambda e: None, SecureChannel(KeyStore()), pol)
+    nokey.on_event(wire[-1])
+    assert nokey.recent(1)[0]["text"] == "" and "does not hold" in nokey.recent(1)[0]["status"]
+
+
+def test_burst_chat_secure_needs_module():
+    tx = BurstChat("N1", "H", Signer(), lambda e: None)   # no secure channel/policy
+    assert tx.send("secret", 155e6, secure=True)["ok"] is False
+
+
+def test_radio_transport_queues_bursts_through_fades():
+    rt = RadioTransport(min_quality=0.15)
+
+    class W:
+        def __init__(self): self.n = 0
+        def write(self, d): self.n += 1
+    rt._writer = W()
+    rt.link_quality = 0.0                 # path faded
+    for i in range(3):
+        rt.send(b"m%d" % i)
+    assert rt.pending == 3 and rt.sent == 0
+    rt.link_quality = 1.0                 # opening
+    rt.flush()
+    assert rt.pending == 0 and rt.sent == 3

@@ -1,0 +1,17 @@
+[Unit]
+Description=Orca spectrum intelligence and security operations node
+After=network-online.target gpsd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=orca
+WorkingDirectory=/opt/orca
+ExecStart=/usr/bin/python3 -m orca --config /opt/orca/config/site.yaml
+Restart=on-failure
+RestartSec=5
+# Orca receives only; it needs no special privileges beyond its SDR device group.
+SupplementaryGroups=plugdev dialout
+
+[Install]
+WantedBy=multi-user.target

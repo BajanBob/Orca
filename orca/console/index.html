@@ -170,6 +170,16 @@ label input,label select{margin-top:2px}
       <div id="tpOut" class="muted">Enter a path and compute the link budget.</div>
       <div id="tpLive" class="muted"></div>
     </section>
+    <section class="card">
+      <h2>Burst chat <small>over the mesh · off-grid</small></h2>
+      <div id="chatLog" class="stream" style="max-height:220px"></div>
+      <div class="tools">
+        <input id="chatIn" placeholder="Message…" maxlength="200" aria-label="Chat message" style="flex:1 1 160px">
+        <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" id="chatSec" style="min-height:0;width:auto"> Secure</label>
+        <button type="button" class="pri" id="chatSend">Send</button>
+      </div>
+      <div id="chatNote" class="muted"></div>
+    </section>
     <section class="card" id="simCard" hidden>
       <h2>Simulator <small>Training scenarios</small></h2>
       <div class="tools" id="scen"></div>
@@ -261,7 +271,7 @@ function onMsg(m){
       $('site').textContent = `${m.site.name} · ${m.site.node} · ${m.region.name.split(':')[0]}`;
       S.view = {lo:m.view.lo, hi:m.view.hi}; setChain(m.view); markRail(); drawAxis();
       S.nodes = m.nodes; S.sim = m.sim; S.protected = m.protected; S.scenarios = m.scenarios; renderScen();
-      S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; S.tropo = m.tropo; renderIntel();
+      S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; S.tropo = m.tropo; S.chat = m.chat; renderIntel(); renderChat();
       if (m.tropo && m.tropo.predicted) { showBudget(m.tropo.predicted, 'tpOut'); $('tpRun').hidden=true; $('tpStop').hidden=false; }
       S.inc = new Map(m.incidents.map(i => [i.id, i])); S.events = m.events.reverse(); S.audit = m.audit; S.caps = m.captures;
       if (!S.sel && m.incidents.length) S.sel = m.incidents.at(-1).id;
@@ -281,6 +291,7 @@ function onMsg(m){
       else if (m.data?.name) toast(`Saved ${m.data.name}`);
       break;
     case 'tropo': S.tropo = m.data; showTropoLive(m.data); break;
+    case 'chat': if (S.chat){ S.chat.log = [...(S.chat.log||[]), m.data]; renderChat(); } break;
   }
 }
 function setChain(v){
@@ -526,6 +537,27 @@ const MODES={cw:'CW 100 Hz',ssb:'SSB 2.5 kHz',ft8:'FT8 50 Hz',msk144:'MSK144 500
 $('tpCalc').onclick = () => { $('tpOut').textContent='Computing…'; send({cmd:'tropo_budget', ...tpParams()}); };
 $('tpRun').onclick = () => { send({cmd:'tropo_start', ...tpParams(), name:`Tropo ${$('tpDist').value} km`}); $('tpRun').hidden=true; $('tpStop').hidden=false; };
 $('tpStop').onclick = () => { send({cmd:'tropo_stop'}); $('tpRun').hidden=false; $('tpStop').hidden=true; $('tpLive').textContent=''; };
+function renderChat(){
+  const c = S.chat; if (!c) return;
+  const sec = $('chatSec');
+  sec.disabled = !c.secure_available;
+  $('chatNote').innerHTML = c.secure_available
+    ? `<b>${esc(c.callsign)}</b> · Secure available (encrypted, operator keys, non-amateur bands only).`
+    : `<b>${esc(c.callsign)}</b> · Clear only. On 2 m/70 cm, chat is unencrypted by amateur rules; the secure module adds encryption on licensed government/defence bands.`;
+  $('chatLog').innerHTML = (c.log||[]).slice(-40).map(m => {
+    const who = m.dir==='out' ? 'You' : esc(m.from||'?');
+    const lock = m.secure ? '🔒 ' : '';
+    const body = m.text ? esc(m.text) : `<span class="muted">${esc(m.status)}</span>`;
+    return `<div style="grid-template-columns:62px minmax(0,1fr)"><span>${hhmmss(m.ts)}</span><span>${lock}<b>${who}</b>: ${body}</span></div>`;
+  }).join('') || '<p class="muted">No messages yet.</p>';
+  $('chatLog').scrollTop = $('chatLog').scrollHeight;
+}
+$('chatSend').onclick = () => {
+  const t = $('chatIn').value.trim(); if (!t) return;
+  send({cmd:'chat_send', text:t, secure:$('chatSec').checked, freq: S.tropo ? S.tropo.freq_hz : undefined});
+  $('chatIn').value='';
+};
+$('chatIn').addEventListener('keydown', e => { if (e.key==='Enter') $('chatSend').click(); });
 function showTropoLive(t){
   if (!t || !t.stats){ $('tpLive').textContent='Measuring…'; return; }
   const s=t.stats;
@@ -572,6 +604,7 @@ function startDemo(){
   S.intel = {classes:['empty','am','fm','fsk','psk','ofdm','pulse','chirp'], emitters:[]};
   S.mesh = {node:'BB-BGI-PORT', seen:0, forwarded:0, dropped:0, transport:'single node'};
   S.tropo = null;
+  S.chat = {callsign:'8P6ORC', secure_available:false, log:[]}; renderChat();
   S.secure = {enabled:false, note:"Encrypts and decrypts the operator's own communications on licensed, non-amateur frequencies above the floor; it does not defeat third-party encryption."};
   renderIntel();
   S.nodes = [{id:'BB-BGI-PORT',name:'Bridgetown port'},{id:'BB-BGI-HARB',name:'Harbour master'},{id:'BB-HAST',name:'Hastings'},{id:'BB-GAIA',name:'Airport perimeter'}];
@@ -638,6 +671,12 @@ function demoCommand(m){
         const snr2=b.snr_db+fade; S.tropo.stats={availability_pct:100*(n>0?0.9:1),median_snr:+(b.snr_db-1).toFixed(1),fade_depth_db:+(6+Math.random()*6).toFixed(1),samples:n}; showTropoLive(S.tropo); },1500); }
   }
   else if (m.cmd==='tropo_stop'){ clearInterval(S._tpTimer); S.tropo=null; }
+  else if (m.cmd==='chat_send'){
+    if (m.secure){ setTimeout(()=>toast('Secure chat needs the government/defence module and a server'),100); return; }
+    S.chat.log=[...(S.chat.log||[]), {ts:Date.now()/1000, from:S.chat.callsign, text:m.text, secure:false, dir:'out', status:'clear'}];
+    renderChat();
+    setTimeout(()=>{ S.chat.log=[...S.chat.log, {ts:Date.now()/1000, from:'8P6XYZ', text:'Copy, 59 here', secure:false, dir:'in', status:'clear'}]; renderChat(); }, 1800);
+  }
   else if (m.cmd==='classify'){
     const f=m.freq, lab = f>1.56e9&&f<1.59e9&&S.scenarios.includes('gnss_jam')?'chirp'
       : f>87e6&&f<108e6?'fm' : f>1e9&&f<1.1e9?'pulse' : f<1.7e6?'am'

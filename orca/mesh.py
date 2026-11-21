@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 from .oef import Signer, dumps
 
@@ -51,26 +51,46 @@ class RadioTransport(Transport):
     """
     FEND = 0xC0
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8001, min_quality: float = 0.15):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8001, min_quality: float = 0.15,
+                 queue_max: int = 500):
         self.host, self.port, self.min_quality = host, port, min_quality
         self.link_quality = 1.0
         self._cb = None
         self._writer = None
         self._buf = bytearray()
-        self.sent = self.recv = self.skipped = 0
+        self._queue: deque = deque(maxlen=queue_max)   # bursts waiting for an opening
+        self.sent = self.recv = self.dropped_q = 0
 
     def set_handler(self, cb):
         self._cb = cb
 
+    def _up(self) -> bool:
+        return self._writer is not None and self.link_quality >= self.min_quality
+
     def send(self, data: bytes):
-        if self.link_quality < self.min_quality or self._writer is None:
-            self.skipped += 1
-            return                       # path is down; store-and-forward will retry
+        if not self._up():               # path down/faded: hold for the next opening
+            if len(self._queue) == self._queue.maxlen:
+                self.dropped_q += 1
+            self._queue.append(data)
+            return
+        self._write(data)
+        self.flush()
+
+    def _write(self, data: bytes):
         try:
             self._writer.write(kiss_wrap(data))
             self.sent += 1
         except Exception:
-            self.skipped += 1
+            self._queue.appendleft(data)
+
+    def flush(self):
+        """Send queued bursts while the path is open (called as link quality rises)."""
+        while self._queue and self._up():
+            self._write(self._queue.popleft())
+
+    @property
+    def pending(self) -> int:
+        return len(self._queue)
 
     def feed(self, chunk: bytes):
         """Feed received bytes from the TNC; emits complete frames to the mesh."""

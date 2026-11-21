@@ -20,6 +20,7 @@ from .bands import BANDS, FRONTENDS, RECEIVERS, describe_plan, plan
 from .baseline import BINS, Baseline
 from .bus import Bus
 from .capture import CaptureStore
+from .chat import BurstChat
 from .detect import Rules
 from .df import aoa_fix, tdoa_fix
 from .intel import Classifier, EmitterLibrary
@@ -102,6 +103,22 @@ class Orca:
             bank = DecoderBank(pol, SecureChannel(self.keystore))
             bank.register(ClearFskDecoder(baud=float(sc.get("baud", 1200))))
             self.secure = {"policy": pol, "bank": bank}
+        # Burst chat over the mesh: clear on ham, encrypted on the secure module
+        self.chat = BurstChat(
+            self.node, cfg.get("aprs", {}).get("callsign", "") or self.node, self.signer,
+            self.mesh.publish,
+            SecureChannel(self.keystore) if self.secure else None,
+            self.secure["policy"] if self.secure else None)
+        # route chat events arriving from mesh peers into the chat log
+        self.mesh.on_event = self._on_mesh_event
+
+    def _on_mesh_event(self, ev: dict):
+        if not self.chat.on_event(ev):
+            # non-chat peer events: surface for the shared picture, don't re-run rules
+            self.events.append(ev)
+            self.bus.publish("event", ev)
+        else:
+            self.bus.publish("chat", self.chat.recent(1)[0])
 
     # ------------------------------------------------------------ adapters
     def _build_adapters(self):
@@ -283,6 +300,7 @@ class Orca:
             exp.add(_t.time(), snr)
             if self.mesh_radio is not None:
                 self.mesh_radio.link_quality = tropo_mod.link_quality(snr, exp.threshold)
+                self.mesh_radio.flush()        # path opened: send any queued bursts
             st = exp.stats()
             self.bus.publish("tropo", {"freq_hz": exp.freq_hz, "d_km": exp.d_km,
                                        "mode": exp.mode, "snr_db": round(snr, 1),
@@ -457,6 +475,8 @@ class Orca:
                           "emitters": self.emitters.list()[:30]},
                 "mesh": self.mesh_stats(),
                 "tropo": self.tropo_snapshot(),
+                "chat": {"callsign": self.chat.callsign, "secure_available": self.secure is not None,
+                         "log": self.chat.recent(60)},
                 "secure": self.secure_status()}
 
     def mesh_stats(self) -> dict:
@@ -464,7 +484,7 @@ class Orca:
         if self.mesh_radio is not None:
             s["transport"] = "radio (troposcatter/VHF/LoRa, KISS)"
             s["radio"] = {"sent": self.mesh_radio.sent, "recv": self.mesh_radio.recv,
-                          "skipped": self.mesh_radio.skipped,
+                          "pending": self.mesh_radio.pending, "dropped_q": self.mesh_radio.dropped_q,
                           "link_quality": round(self.mesh_radio.link_quality, 2)}
         else:
             s["transport"] = "single node"
@@ -586,6 +606,13 @@ def create_app(cfg: dict) -> FastAPI:
         if c == "tropo_stop":
             orca.stop_tropo()
             return {"ok": True}
+        if c == "chat_send":
+            freq = float(msg.get("freq") or (orca.tropo.freq_hz if orca.tropo else 144.2e6))
+            res = orca.chat.send(str(msg.get("text", "")), freq, bool(msg.get("secure")),
+                                 msg.get("key_id"))
+            if res.get("ok"):
+                orca.bus.publish("chat", orca.chat.recent(1)[0])
+            return res
         if c == "label_emitter":
             return {"ok": orca.emitters.label(msg["id"], msg["label"])}
         if c == "df":
