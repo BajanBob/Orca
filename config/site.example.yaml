@@ -63,7 +63,27 @@ protected_extra:
 anomaly_z: 6.0
 
 # ---- Phase 4 mesh (off-grid sync) ------------------------------------------
-mesh: {peers: []}            # peers to sync with; empty = a mesh of one
+# Detections sync peer-to-peer. Over a radio (troposcatter/VHF/LoRa) KISS link
+# when radio.enabled; otherwise a mesh of one. Store-and-forward rides fades.
+mesh:
+  peers: []
+  radio: {enabled: false, host: 127.0.0.1, port: 8001, min_quality: 0.15}
+
+# ---- Troposcatter experiment (2 m / 70 cm beyond-line-of-sight) -------------
+# Plans and measures a trans-horizon amateur link (e.g. island to island). When
+# enabled, Orca predicts the link budget and measures received SNR, fading and
+# availability on `freq`, and feeds that availability to the radio mesh link.
+tropo:
+  enabled: false
+  name: "Barbados - St Lucia 2 m"
+  freq: 144.2e6              # agreed experiment frequency (above 148? no: 2 m is amateur, clear mode)
+  distance_km: 150
+  power_w: 100
+  gain_t: 13                # antenna gain each end, dBi
+  gain_r: 13
+  height_t: 40              # antenna height, m (sets the takeoff angle)
+  height_r: 40
+  mode: ft8                 # cw | ssb | ft8 | msk144
 
 # ---- Secure module (government / defence edition) --------------------------
 # Disabled by default. When enabled it encrypts and DECRYPTS the operator's OWN

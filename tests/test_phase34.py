@@ -179,3 +179,61 @@ def test_federation_anonymises():
     a = anonymise(ev, round_m=1000)
     assert "data" not in a and a["site"] == "BB-BGI"
     assert abs(a["geo"]["lat"] - 13.1) < 0.01 and a["geo"]["err_m"] >= 1000
+
+
+# ---------------------------------------------------------------- troposcatter
+from orca import tropo
+from orca.mesh import RadioTransport, kiss_wrap
+
+
+def test_tropo_geometry_matches_oz1rh():
+    assert abs(tropo.horizon_km(100) - 41) < 1          # 4.1*sqrt(100)
+    assert abs(tropo.takeoff_deg(10, 144e6) - 3.0) < 0.3
+    assert abs(tropo.takeoff_deg(40, 144e6) - 0.75) < 0.2
+
+
+def test_tropo_link_budget_reproduces_amateur_anchors():
+    # OZ1RH: 10 W + 20 dB combined ~ 290 km on 2 m SSB is workable
+    b = tropo.link_budget(144e6, 290, 10, 10, 10, 20, 20, "ssb")
+    assert b.margin_db >= 0 and "feasible" not in b.verdict.split()[0]
+    # 100 W + 30 dB ~ 500 km is at least workable
+    assert tropo.link_budget(144e6, 500, 100, 15, 15, 30, 30, "ssb").margin_db >= 3
+    # 10 W over 700 km with a small station is not feasible
+    assert tropo.link_budget(144e6, 700, 10, 10, 10, 20, 20, "ssb").margin_db < 0
+    # digital modes (FT8) reach much further than SSB for the same path
+    ssb = tropo.link_budget(144e6, 400, 100, 15, 15, 30, 30, "ssb").margin_db
+    ft8 = tropo.link_budget(144e6, 400, 100, 15, 15, 30, 30, "ft8").margin_db
+    assert ft8 > ssb + 15
+
+
+def test_tropo_experiment_stats_and_quality():
+    b = tropo.link_budget(144e6, 150, 100, 13, 13, 40, 40, "ft8")
+    exp = tropo.TropoExperiment("t", b.freq_hz, b.d_km, "ft8", b)
+    import numpy as np
+    rng = np.random.default_rng(0)
+    for i in range(200):
+        exp.add(i, tropo.sim_fading_snr(b.snr_db, i, rng))
+    st = exp.stats()
+    assert st.samples == 200 and st.availability_pct > 90 and st.fade_depth_db > 0
+    assert tropo.link_quality(exp.threshold, exp.threshold) == 0.0
+    assert tropo.link_quality(exp.threshold + 20, exp.threshold) == 1.0
+
+
+def test_radio_transport_kiss_roundtrip_and_quality_gate():
+    rt = RadioTransport(min_quality=0.15)
+    got = []
+    rt.set_handler(got.append)
+    payload = b'{"t":"ev","ev":{"id":"x"}}'
+    rt.feed(kiss_wrap(payload))                       # TNC echoes a framed packet
+    assert got and got[0] == payload
+    # with no TNC connected or a dead path, sends are skipped (store-and-forward)
+    rt.link_quality = 0.0
+    rt.send(payload)
+    assert rt.skipped == 1 and rt.sent == 0
+
+    class W:
+        def __init__(self): self.n = 0
+        def write(self, d): self.n += 1
+    rt._writer = W(); rt.link_quality = 1.0
+    rt.send(payload)
+    assert rt.sent == 1

@@ -82,8 +82,9 @@ orca/
   capture.py      SigMF IQ, spectrum CSV, screenshots
   adapters/       skylark_gnss, tradewind_aprs, uranus_wsjtx, network_syslog
   intel/          Phase 3: modulation classifier, emitter fingerprinting, features
-  mesh.py         Phase 4: signed store-and-forward mesh + federation
+  mesh.py         Phase 4: signed store-and-forward mesh + radio transport + federation
   df.py           Phase 4: AoA and TDOA direction-finding solvers
+  tropo.py        troposcatter experiment: link budget + SNR/fading/availability
   secure/         government/defence module: policy, own-comms crypto, decoder
   server.py       FastAPI + WebSocket
   console/        touchscreen console (also runs in demo mode with no server)
@@ -101,6 +102,17 @@ On-device, no cloud and no GPU:
 - **MeshNet** (`orca/mesh.py`): nodes gossip signed events to their peers and forward what they haven't seen, so a detection reaches the whole mesh with no internet. Only valid Ed25519 signatures are accepted and forwarded; duplicates and loops are dropped. Transports are pluggable (in-process, UDP, and a KISS helper for LoRa/packet radio).
 - **Direction finding** (`orca/df.py`): the Phase 2 DF stub is now a real solver. Angle-of-arrival (bearings) and TDOA (arrival times) both locate an emitter by least squares from three or more nodes; ~9 m error with 30 ns timing noise in testing. The jamming playbook's DF step now returns a located fix.
 - **Federation**: `anonymise()` shares a coarse view (no raw IQ, rounded position) between sites that opt in.
+- **Radio mesh transport** (`RadioTransport` in `orca/mesh.py`): the mesh can run over a packet-radio link through a KISS TNC (Direwolf, a hardware TNC, or a LoRa gateway). This is how it crosses a **troposcatter or VHF/UHF path between islands** with no internet. The link is intermittent, so a `link_quality` value gates transmission and store-and-forward re-offers anything missed in a fade.
+
+## Troposcatter experiment (2 m / 70 cm)
+
+A beyond-line-of-sight amateur link, the kind the U.S. Marines demonstrated on microwave over 187 miles in 2025 — but on 2 m/70 cm, where the practical range for modest stations is 290–500 km (per OZ1RH's amateur data). For the Caribbean that reaches the neighbouring islands. `orca/tropo.py` provides:
+
+- **A link-budget calculator**: scatter geometry (4/3-Earth, takeoff angles), path loss, received level, SNR and a feasibility verdict (reliable / workable / marginal / not feasible) for CW, SSB, FT8 and MSK144. It is calibrated to reproduce OZ1RH's validated operating points; it is an engineering estimate for planning, not an ITU-R P.617 certification.
+- **A measurement side**: Orca locks on the agreed frequency and logs the received SNR over time, then reports the **fading statistics and availability** (the fraction of time the link is usable) that define a real troposcatter path. Set it up in the console's Troposcatter panel, or under `tropo:` in the config.
+- **It feeds the mesh**: the measured link quality drives the radio mesh transport above, so two islands can carry Orca detections to each other over a troposcatter link, with the mesh handling the fades.
+
+This is all amateur, clear-mode operation on 2 m/70 cm. Those are amateur bands, so the secure module is excluded from them: nothing here encrypts or decrypts. Transmitting the beacon is the operator's own licensed activity on their rig.
 
 ## Secure module (government / defence edition)
 

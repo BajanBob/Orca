@@ -89,6 +89,10 @@ td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top;overfl
 dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);max-width:min(900px,94vw);padding:16px}
 dialog img{max-width:100%;border-radius:8px;display:block}
 dialog::backdrop{background:rgba(0,0,0,.55)}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mute)}
+label input,label select{margin-top:2px}
+.verdict{font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid currentColor;font-size:13px}
+.verdict.reliable{color:var(--ok)}.verdict.workable{color:var(--sea)}.verdict.marginal{color:var(--warn)}.verdict.no{color:var(--crit)}
 @media(prefers-reduced-motion:reduce){.toast{transition:none}}
 @media(max-width:600px){.stream div{grid-template-columns:60px minmax(0,1fr)}.stream div .s{display:none}.specwrap{height:420px}}
 </style>
@@ -151,6 +155,20 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <h2>Mesh <small>Phase 4 · off-grid sync</small></h2>
       <div id="meshOut" class="muted"></div>
       <div id="secureOut" class="muted" style="margin-top:6px"></div>
+    </section>
+    <section class="card">
+      <h2>Troposcatter <small>2 m / 70 cm · beyond-line-of-sight</small></h2>
+      <div class="row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label>Distance (km)<input id="tpDist" type="number" value="150" inputmode="numeric"></label>
+        <label>Band<select id="tpBand"><option value="144.2e6">2 m (144 MHz)</option><option value="432.2e6">70 cm (432 MHz)</option><option value="50.2e6">6 m (50 MHz)</option></select></label>
+        <label>Power (W)<input id="tpPow" type="number" value="100" inputmode="numeric"></label>
+        <label>Gain each end (dBi)<input id="tpGain" type="number" value="13" inputmode="numeric"></label>
+        <label>Antenna height (m)<input id="tpHt" type="number" value="40" inputmode="numeric"></label>
+        <label>Mode<select id="tpMode"><option value="ft8">FT8</option><option value="msk144">MSK144</option><option value="cw">CW</option><option value="ssb" selected>SSB</option></select></label>
+      </div>
+      <div class="tools"><button type="button" class="pri" id="tpCalc">Compute link</button><button type="button" id="tpRun">Start experiment</button><button type="button" id="tpStop" hidden>Stop</button></div>
+      <div id="tpOut" class="muted">Enter a path and compute the link budget.</div>
+      <div id="tpLive" class="muted"></div>
     </section>
     <section class="card" id="simCard" hidden>
       <h2>Simulator <small>Training scenarios</small></h2>
@@ -243,7 +261,8 @@ function onMsg(m){
       $('site').textContent = `${m.site.name} · ${m.site.node} · ${m.region.name.split(':')[0]}`;
       S.view = {lo:m.view.lo, hi:m.view.hi}; setChain(m.view); markRail(); drawAxis();
       S.nodes = m.nodes; S.sim = m.sim; S.protected = m.protected; S.scenarios = m.scenarios; renderScen();
-      S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; renderIntel();
+      S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; S.tropo = m.tropo; renderIntel();
+      if (m.tropo && m.tropo.predicted) { showBudget(m.tropo.predicted, 'tpOut'); $('tpRun').hidden=true; $('tpStop').hidden=false; }
       S.inc = new Map(m.incidents.map(i => [i.id, i])); S.events = m.events.reverse(); S.audit = m.audit; S.caps = m.captures;
       if (!S.sel && m.incidents.length) S.sel = m.incidents.at(-1).id;
       renderInc(); renderStream(); renderAudit(); renderCaps(); break;
@@ -256,9 +275,12 @@ function onMsg(m){
     case 'health': S.health = {...S.health, ...m.data}; renderHealth(); break;
     case 'result':
       if (m.data && m.data.ok === false) toast(m.data.error || 'Command failed');
+      else if (m.data?.budget) showBudget(m.data.budget, 'tpOut');
+      else if (m.data?.predicted) { showBudget(m.data.predicted, 'tpOut'); $('tpLive').textContent='Measuring…'; }
       else if (m.data?.result && m.data.result.label !== undefined) showClass(m.data.result);
       else if (m.data?.name) toast(`Saved ${m.data.name}`);
       break;
+    case 'tropo': S.tropo = m.data; showTropoLive(m.data); break;
   }
 }
 function setChain(v){
@@ -479,7 +501,9 @@ function renderScen(){ $('simCard').hidden = !S.sim; $('scen').innerHTML = SCEN.
 function renderIntel(){
   const i = S.intel, mesh = S.mesh, sec = S.secure;
   if (i) $('emitters').innerHTML = `Emitter library: <b>${i.emitters.length}</b> known` + (i.emitters.length ? ' · ' + i.emitters.slice(0,3).map(e=>`${esc(e.label)} @ ${fmtF(e.center)} (×${e.count})`).join(', ') : '');
-  if (mesh) $('meshOut').innerHTML = `This node <b>${esc(mesh.node)}</b> · seen ${mesh.seen} · forwarded ${mesh.forwarded} · dropped ${mesh.dropped}. A single node until peers are configured; detections then sync over LoRa/VHF/HF with no internet.`;
+  if (mesh) { const rq = mesh.radio ? ` · link ${(mesh.radio.link_quality*100).toFixed(0)}% · sent ${mesh.radio.sent} recv ${mesh.radio.recv}` : '';
+    $('meshOut').innerHTML = `This node <b>${esc(mesh.node)}</b> · transport: ${esc(mesh.transport||'single node')}${rq}<br><span class="muted">seen ${mesh.seen} · forwarded ${mesh.forwarded} · dropped ${mesh.dropped}. Detections sync over troposcatter/VHF/HF/LoRa with no internet; store-and-forward rides through fades.</span>`; }
+  if (S.tropo) showTropoLive(S.tropo);
   if (sec) $('secureOut').innerHTML = sec.enabled
     ? `<b>Secure module: on</b> · authority ${esc(sec.authority||'—')} · ${sec.keys} key(s) · floor ${sec.floor_mhz} MHz. ${esc(sec.boundary)}.`
     : `<b>Secure module: off</b> <span class="muted">(government/defence edition)</span>. ${esc(sec.note)}`;
@@ -490,6 +514,23 @@ $('classifyBtn').onclick = () => {
   $('classOut').textContent = 'Classifying…';
   send({cmd:'classify', freq:f, span: S.selEm ? Math.max(S.selEm.bw_occ*3,50e3) : 200e3});
 };
+function tpParams(){ return {freq:+$('tpBand').value, distance_km:+$('tpDist').value, power_w:+$('tpPow').value,
+  gain_t:+$('tpGain').value, gain_r:+$('tpGain').value, height_t:+$('tpHt').value, height_r:+$('tpHt').value, mode:$('tpMode').value}; }
+function vclass(v){ return v.startsWith('reliable')?'reliable':v.startsWith('workable')?'workable':v.startsWith('marginal')?'marginal':'no'; }
+function showBudget(b, where){
+  $(where).innerHTML = `<span class="verdict ${vclass(b.verdict)}">${esc(b.verdict)}</span> `
+    + `SNR <b>${b.snr_db} dB</b> (margin ${b.margin_db} dB) · scatter ${b.scatter_deg}° · path loss ${b.basic_loss_db} dB`
+    + `<br><span class="muted">${fmtF(b.freq_hz)} · ${b.d_km} km · ${MODES[b.mode]||b.mode}. Good conditions add ~10 dB; deep fades subtract up to 20 dB.</span>`;
+}
+const MODES={cw:'CW 100 Hz',ssb:'SSB 2.5 kHz',ft8:'FT8 50 Hz',msk144:'MSK144 500 Hz'};
+$('tpCalc').onclick = () => { $('tpOut').textContent='Computing…'; send({cmd:'tropo_budget', ...tpParams()}); };
+$('tpRun').onclick = () => { send({cmd:'tropo_start', ...tpParams(), name:`Tropo ${$('tpDist').value} km`}); $('tpRun').hidden=true; $('tpStop').hidden=false; };
+$('tpStop').onclick = () => { send({cmd:'tropo_stop'}); $('tpRun').hidden=false; $('tpStop').hidden=true; $('tpLive').textContent=''; };
+function showTropoLive(t){
+  if (!t || !t.stats){ $('tpLive').textContent='Measuring…'; return; }
+  const s=t.stats;
+  $('tpLive').innerHTML = `<b>Live:</b> availability <b>${s.availability_pct.toFixed(0)}%</b> · median ${s.median_snr} dB · fade depth ${s.fade_depth_db} dB · ${s.samples} samples over ${fmtF(t.freq_hz)}, ${t.d_km} km.`;
+}
 $('scen').addEventListener('click', e => { const b=e.target.closest('[data-sc]'); if (!b) return; const on = !S.scenarios.includes(b.dataset.sc);
   S.scenarios = on ? [...S.scenarios, b.dataset.sc] : S.scenarios.filter(x=>x!==b.dataset.sc); renderScen(); send({cmd:'scenario', name:b.dataset.sc, on}); });
 setInterval(() => { $('clock').textContent = new Date().toISOString().slice(11,19)+' UTC'; }, 1000);
@@ -529,7 +570,8 @@ function startDemo(){
   $('site').textContent = 'Barbados regional mesh · demo data';
   S.sim = true; S.scenarios = ['gnss_jam']; renderScen(); markRail(); drawAxis();
   S.intel = {classes:['empty','am','fm','fsk','psk','ofdm','pulse','chirp'], emitters:[]};
-  S.mesh = {node:'BB-BGI-PORT', seen:0, forwarded:0, dropped:0};
+  S.mesh = {node:'BB-BGI-PORT', seen:0, forwarded:0, dropped:0, transport:'single node'};
+  S.tropo = null;
   S.secure = {enabled:false, note:"Encrypts and decrypts the operator's own communications on licensed, non-amateur frequencies above the floor; it does not defeat third-party encryption."};
   renderIntel();
   S.nodes = [{id:'BB-BGI-PORT',name:'Bridgetown port'},{id:'BB-BGI-HARB',name:'Harbour master'},{id:'BB-HAST',name:'Hastings'},{id:'BB-GAIA',name:'Airport perimeter'}];
@@ -580,6 +622,22 @@ function demoCommand(m){
   else if (m.cmd==='capture_iq'){ const name=`orca_demo_${(m.freq/1e6).toFixed(3)}MHz.sigmf-data`; S.caps.unshift({name, bytes:Math.round(Math.min(m.span*1.25*m.seconds, 4194304)*8)}); renderCaps(); demoAudit('Operator', `IQ capture ${name}`); setTimeout(()=>toast(`Saved ${name} (demo)`), 600); }
   else if (m.cmd==='capture_spectrum'){ const name=`orca_demo_${Date.now()}_spectrum.csv`; S.caps.unshift({name, bytes:24000}); renderCaps(); toast(`Saved ${name} (demo)`); }
   else if (m.cmd==='scenario'){ demoAudit('Operator', `simulator scenario ${m.name} ${m.on?'on':'off'}`); }
+  else if (m.cmd==='tropo_budget' || m.cmd==='tropo_start'){
+    const d=m.distance_km, f=m.freq, g=m.gain_t+m.gain_r, pw=10*Math.log10(m.power_w*1000);
+    const eg = g<=50?g:50+0.45*(g-50);
+    const AE=4/3*6371, theta=d/AE*57.2958 + 2*57.2958*(3e8/f)/(4*m.height_t);
+    const lb=69+20*Math.log10(f/1e6)+10.5*theta+10*Math.log10(d);
+    const bw={cw:100,ssb:2500,ft8:50,msk144:500}[m.mode], ms={cw:0,ssb:3,ft8:-21,msk144:-8}[m.mode];
+    const noise=-174+10*Math.log10(bw)+3, snr=Math.min(40, pw+eg-lb-noise), margin=snr-ms;
+    const verdict = margin>=10?'reliable':margin>=3?'workable':margin>=-3?'marginal (good conditions only)':'not feasible with this setup';
+    const b={freq_hz:f,d_km:d,scatter_deg:+theta.toFixed(1),basic_loss_db:+lb.toFixed(1),snr_db:+snr.toFixed(1),margin_db:+margin.toFixed(1),verdict,mode:m.mode};
+    if (m.cmd==='tropo_budget'){ setTimeout(()=>showBudget(b,'tpOut'),150); }
+    else { S.tropo={name:'demo',freq_hz:f,d_km:d,mode:m.mode,predicted:b,stats:null}; showBudget(b,'tpOut');
+      demoAudit('Operator',`started troposcatter experiment on ${(f/1e6).toFixed(3)} MHz over ${d} km (predicted ${verdict})`);
+      let n=0; S._tpTimer=setInterval(()=>{ n++; const fade=(Math.random()+Math.random()-1)*8 + 10*Math.log10(-Math.log(Math.random())+1e-3);
+        const snr2=b.snr_db+fade; S.tropo.stats={availability_pct:100*(n>0?0.9:1),median_snr:+(b.snr_db-1).toFixed(1),fade_depth_db:+(6+Math.random()*6).toFixed(1),samples:n}; showTropoLive(S.tropo); },1500); }
+  }
+  else if (m.cmd==='tropo_stop'){ clearInterval(S._tpTimer); S.tropo=null; }
   else if (m.cmd==='classify'){
     const f=m.freq, lab = f>1.56e9&&f<1.59e9&&S.scenarios.includes('gnss_jam')?'chirp'
       : f>87e6&&f<108e6?'fm' : f>1e9&&f<1.1e9?'pulse' : f<1.7e6?'am'

@@ -23,7 +23,8 @@ from .capture import CaptureStore
 from .detect import Rules
 from .df import aoa_fix, tdoa_fix
 from .intel import Classifier, EmitterLibrary
-from .mesh import MeshNode, NullTransport, anonymise
+from .mesh import MeshNode, NullTransport, RadioTransport, anonymise
+from . import tropo as tropo_mod
 from .oef import Event, Signer
 from .sdr import make_source
 from .secure import ClearFskDecoder, DecoderBank, KeyStore, SecureChannel, SecurePolicy
@@ -66,9 +67,23 @@ class Orca:
         # Phase 3: on-device classifier (lazy-trained, cached) and emitter library
         self.classifier = Classifier.load_or_train(d / "modrec.json")
         self.emitters = EmitterLibrary(d / "emitters.json")
-        # Phase 4: mesh (null transport until peers are configured)
-        self.mesh = MeshNode(self.node, self.signer, NullTransport())
+        # Phase 4: mesh. Over a radio (troposcatter/VHF/LoRa) KISS link if
+        # configured, else a mesh of one.
+        radio = cfg.get("mesh", {}).get("radio")
+        self.mesh_radio = None
+        if radio and radio.get("enabled"):
+            self.mesh_radio = RadioTransport(radio.get("host", "127.0.0.1"),
+                                             int(radio.get("port", 8001)),
+                                             float(radio.get("min_quality", 0.15)))
+            self.mesh = MeshNode(self.node, self.signer, self.mesh_radio)
+        else:
+            self.mesh = MeshNode(self.node, self.signer, NullTransport())
         self.fixes: dict[str, dict] = {}        # incident id -> last DF fix
+        # Troposcatter experiment (Phase 4 off-grid link planning + measurement)
+        self.tropo = None
+        tp = cfg.get("tropo", {})
+        if tp.get("enabled"):
+            self.start_tropo(tp)
         # Secure module (government/defence edition), off unless configured
         sc = cfg.get("secure", {})
         self.secure_on = bool(sc.get("enabled"))
@@ -212,6 +227,68 @@ class Orca:
         fix = aoa_fix(reports)
         return fix.to_dict() if fix else None
 
+    def tropo_budget(self, params: dict) -> dict:
+        b = tropo_mod.link_budget(
+            freq_hz=float(params.get("freq", 144.2e6)),
+            d_km=float(params.get("distance_km", 150)),
+            ptx_w=float(params.get("power_w", 100)),
+            gain_t_dbi=float(params.get("gain_t", 13)),
+            gain_r_dbi=float(params.get("gain_r", 13)),
+            h1_m=float(params.get("height_t", 30)),
+            h2_m=float(params.get("height_r", 30)),
+            mode=params.get("mode", "ssb"),
+            nf_db=float(params.get("nf", 3)))
+        return b.to_dict()
+
+    def start_tropo(self, params: dict) -> dict:
+        b = tropo_mod.link_budget(
+            freq_hz=float(params.get("freq", 144.2e6)),
+            d_km=float(params.get("distance_km", 150)),
+            ptx_w=float(params.get("power_w", 100)),
+            gain_t_dbi=float(params.get("gain_t", 13)),
+            gain_r_dbi=float(params.get("gain_r", 13)),
+            h1_m=float(params.get("height_t", 30)),
+            h2_m=float(params.get("height_r", 30)),
+            mode=params.get("mode", "ssb"))
+        self.tropo = tropo_mod.TropoExperiment(
+            params.get("name", "Troposcatter experiment"), b.freq_hz, b.d_km,
+            params.get("mode", "ssb"), b)
+        self.audit.log("Operator", f"started troposcatter experiment on {b.freq_hz/1e6:.3f} MHz "
+                       f"over {b.d_km:.0f} km (predicted {b.verdict})")
+        self.bus.publish("audit", self.audit.recent[0])
+        return {"predicted": b.to_dict()}
+
+    def stop_tropo(self):
+        self.tropo = None
+
+    async def tropo_loop(self):
+        import numpy as np
+        rng = np.random.default_rng()
+        import time as _t
+        while True:
+            await asyncio.sleep(1.0)
+            exp = self.tropo
+            if exp is None:
+                continue
+            if hasattr(self.src, "modulated_iq") or not hasattr(self.src, "capture"):
+                # simulation: realistic fading around the predicted median SNR
+                pred = exp.predicted.snr_db if exp.predicted else 10.0
+                snr = tropo_mod.sim_fading_snr(pred, _t.time(), rng)
+            else:
+                # real hardware: measure SNR at the experiment frequency
+                from .spectrum import psd, noise_floor
+                iq = await self.src.capture(exp.freq_hz, 250e3, 4096)
+                f, db = psd(iq, 250e3, 1024)
+                snr = float(db.max() - noise_floor(db))
+            exp.add(_t.time(), snr)
+            if self.mesh_radio is not None:
+                self.mesh_radio.link_quality = tropo_mod.link_quality(snr, exp.threshold)
+            st = exp.stats()
+            self.bus.publish("tropo", {"freq_hz": exp.freq_hz, "d_km": exp.d_km,
+                                       "mode": exp.mode, "snr_db": round(snr, 1),
+                                       "predicted": exp.predicted.to_dict() if exp.predicted else None,
+                                       "stats": st.to_dict() if st else None})
+
     def classify_signal(self, freq: float, span: float = 0) -> dict:
         """Classify the modulation at a frequency and update the emitter library."""
         import numpy as np
@@ -353,11 +430,14 @@ class Orca:
                 "adapters": {k: getattr(a, "health", "?") for k, a in self.adapters.items()},
                 "sdr": self.cfg["sdr"].get("kind"), "scenarios": sorted(self.scenarios),
                 "events_per_min": len(self._ev_times), "public_key": self.signer.public_hex,
-                "uranus": self.adapters["uranus"].propagation(), "mesh": self.mesh.stats()})
+                "uranus": self.adapters["uranus"].propagation(), "mesh": self.mesh_stats()})
             await asyncio.sleep(3)
 
     async def start(self):
-        tasks = [asyncio.create_task(self.spectrum_loop()), asyncio.create_task(self.health_loop())]
+        tasks = [asyncio.create_task(self.spectrum_loop()), asyncio.create_task(self.health_loop()),
+                 asyncio.create_task(self.tropo_loop())]
+        if self.mesh_radio is not None:
+            tasks.append(asyncio.create_task(self.mesh_radio.run()))
         for a in self.adapters.values():
             tasks.append(asyncio.create_task(a.run(self.emit)))
         self.audit.log("Orca", f"node {self.node} started (Orca {__version__})")
@@ -375,8 +455,28 @@ class Orca:
                 "transmit": dict(zip(("ok", "why"), self.aprs.can_transmit())),
                 "intel": {"classes": self.classifier.classes, "decoders": ["clear-fsk"],
                           "emitters": self.emitters.list()[:30]},
-                "mesh": self.mesh.stats(),
+                "mesh": self.mesh_stats(),
+                "tropo": self.tropo_snapshot(),
                 "secure": self.secure_status()}
+
+    def mesh_stats(self) -> dict:
+        s = self.mesh.stats()
+        if self.mesh_radio is not None:
+            s["transport"] = "radio (troposcatter/VHF/LoRa, KISS)"
+            s["radio"] = {"sent": self.mesh_radio.sent, "recv": self.mesh_radio.recv,
+                          "skipped": self.mesh_radio.skipped,
+                          "link_quality": round(self.mesh_radio.link_quality, 2)}
+        else:
+            s["transport"] = "single node"
+        return s
+
+    def tropo_snapshot(self) -> dict | None:
+        if self.tropo is None:
+            return None
+        st = self.tropo.stats()
+        return {"name": self.tropo.name, "freq_hz": self.tropo.freq_hz, "d_km": self.tropo.d_km,
+                "mode": self.tropo.mode, "predicted": self.tropo.predicted.to_dict() if self.tropo.predicted else None,
+                "stats": st.to_dict() if st else None}
 
     def secure_status(self) -> dict:
         if not self.secure:
@@ -479,6 +579,13 @@ def create_app(cfg: dict) -> FastAPI:
         if c == "classify":
             f = float(msg.get("freq") or (orca.view["lo"] + orca.view["hi"]) / 2)
             return {"ok": True, "result": orca.classify_signal(f, float(msg.get("span", 0)))}
+        if c == "tropo_budget":
+            return {"ok": True, "budget": orca.tropo_budget(msg)}
+        if c == "tropo_start":
+            return {"ok": True, **orca.start_tropo(msg)}
+        if c == "tropo_stop":
+            orca.stop_tropo()
+            return {"ok": True}
         if c == "label_emitter":
             return {"ok": orca.emitters.label(msg["id"], msg["label"])}
         if c == "df":
