@@ -9,3 +9,6 @@ httpx>=0.27
 # SoapySDR             # install from your OS packages (e.g. apt install python3-soapysdr soapysdr-module-hackrf)
 # dev
 pytest>=8
+
+# validation (dev only)
+matplotlib>=3.7
