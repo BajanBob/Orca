@@ -47,6 +47,9 @@ class Orca:
         self.bus = Bus()
         self.src = make_source(cfg["sdr"])
         self.scenarios: set = getattr(self.src, "scenarios", set())
+        from .dvb import FtaDecoder
+        _sdr_args = str(cfg["sdr"].get("args", "")).lower()
+        self.video = FtaDecoder(sdr="rtlsdr" if "rtl" in _sdr_args else "hackrf")
         inv = cfg["inventory"]
         self.spectrum = Spectrum(self.src, inv["receivers"], inv["frontends"], cfg["display_bins"])
         self.baseline = Baseline(d / "baseline.sqlite")
@@ -592,6 +595,30 @@ def create_app(cfg: dict) -> FastAPI:
     async def media(freq: float):
         from . import audio
         return audio.media_for(freq)
+
+    @app.get("/api/video/status")
+    async def video_status():
+        from . import dvb
+        return {"tools": dvb.tools_status(), "running": orca.video.running, "info": orca.video.info}
+
+    @app.post("/api/video/start")
+    async def video_start(body: dict):
+        freq = float(body.get("freq", 0))
+        sr = body.get("symrate", 27.5)
+        ca = body.get("ca_system_id")
+        return await orca.video.start(freq, sr, ca_system_id=ca)
+
+    @app.post("/api/video/stop")
+    async def video_stop():
+        await orca.video.stop()
+        return {"ok": True}
+
+    @app.get("/api/video/stream.webm")
+    async def video_stream():
+        from fastapi.responses import StreamingResponse
+        if not orca.video.running:
+            raise HTTPException(409, "No free-to-air decode running; start one first.")
+        return StreamingResponse(orca.video.frames(), media_type="video/webm")
 
     @app.websocket("/ws/audio")
     async def ws_audio(sock: WebSocket):

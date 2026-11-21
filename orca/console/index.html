@@ -158,6 +158,12 @@ label input,label select{margin-top:2px}
         <button type="button" class="pri" id="audBtn" data-tip="Listen to the tuned signal live">▶ Listen</button>
         <span id="audVu" class="vu" aria-hidden="true"><span id="audVuBar"></span></span>
       </div>
+      <div class="tools" id="vidTools" hidden style="margin-top:6px">
+        <label data-tip="Transponder symbol rate in MSym/s (from the satellite profile)">SR
+          <input id="vidSr" type="number" value="27.5" step="0.1" style="width:80px" inputmode="decimal"></label>
+        <button type="button" class="pri" id="vidBtn" data-tip="Decode and play the free-to-air service on this carrier">Decode FTA video</button>
+        <button type="button" id="vidStop" hidden>Stop</button>
+      </div>
       <div id="mediaNote" class="muted">Tune a band that carries audio or video, pick a mode, then Listen.</div>
       <div id="modeHelp" class="note" hidden></div>
     </section>
@@ -866,9 +872,10 @@ const Monitor = (function(){
     let cap = localCap(f);
     if (BASE){ try { const r = await fetch(BASE+'/api/media?freq='+f); if (r.ok) cap = await r.json(); } catch {} }
     const vid = $('mediaVid');
-    if (cap.video){ vid.textContent = '📡 ' + (cap.note || 'Satellite TV band') + ' — free-to-air video decodes with the DVB-S2 pipeline; conditional-access is identified, not descrambled.'; }
-    else if (cap.audio){ vid.textContent = ''; }
-    else { vid.textContent = 'No audio or video on this band'; }
+    $('vidTools').hidden = !cap.video;
+    if (cap.video){ vid.textContent = '📡 ' + (cap.note || 'Satellite TV band') + ' — free-to-air video decodes with the DVB-S2 pipeline; conditional-access is identified, not descrambled.'; refreshVidBtn(); }
+    else if (cap.audio){ vid.textContent = ''; stopVideo(true); }
+    else { vid.textContent = 'No audio or video on this band'; stopVideo(true); }
     if (cap.modes && cap.modes.length){ $('audMode').value = cap.modes[0]; showModeHelp(); }
     $('mediaNote').textContent = cap.audio ? (cap.note||'Audio available') + ' — pick a mode and Listen.'
       : cap.video ? 'Video band: free-to-air decode only.' : 'This band carries no audio/video.';
@@ -926,10 +933,41 @@ const Monitor = (function(){
     ws={close:()=>{try{osc.stop()}catch{}}}; const vuLoop=()=>{ if(playing){ vu(0.3+Math.random()*0.2); setTimeout(vuLoop,120); } }; vuLoop();
   }
 
+  /* ---- free-to-air video decode ---- */
+  let vidOn=false;
+  async function refreshVidBtn(){
+    if (!BASE){ $('vidBtn').disabled=true; $('vidBtn').textContent='Decode FTA video (needs server)'; return; }
+    try { const r=await fetch(BASE+'/api/video/status'); if(r.ok){ const s=await r.json();
+      $('vidBtn').disabled = !s.tools.ready;
+      $('vidBtn').textContent = s.tools.ready ? 'Decode FTA video'
+        : 'Decode FTA video (install leandvb + ffmpeg)'; } } catch {}
+  }
+  async function startVideo(){
+    if (!BASE){ toast('Live decode needs a connected Orca server'); return; }
+    const body={freq:center(), symrate:+$('vidSr').value||27.5};
+    let res; try { res=await (await fetch(BASE+'/api/video/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json(); }
+    catch { toast('Could not reach the server'); return; }
+    if (!res.ok){ $('mediaNote').textContent = res.message || 'Decode unavailable'; toast(res.reason==='conditional-access'?'Encrypted — identify only':'Decode unavailable'); return; }
+    const scr=$('mediaScreen'); scr.querySelectorAll('canvas,video').forEach(e=>e.remove()); $('mediaVid').textContent='';
+    const v=document.createElement('video'); v.autoplay=true; v.controls=true; v.playsInline=true; v.muted=false;
+    v.src=BASE+'/api/video/stream.webm'; scr.appendChild(v);
+    vidOn=true; $('vidBtn').hidden=true; $('vidStop').hidden=false;
+    $('mediaNote').textContent='Decoding free-to-air video at '+fmtF(center())+'. If it stays black, tune exactly on the carrier and set the right symbol rate.';
+  }
+  async function stopVideo(silent){
+    if (!vidOn) { if(silent) return; }
+    vidOn=false; $('vidBtn').hidden=false; $('vidStop').hidden=true;
+    const v=$('mediaScreen').querySelector('video'); if(v){ v.pause(); v.remove(); }
+    if (BASE){ try { await fetch(BASE+'/api/video/stop',{method:'POST'}); } catch {} }
+    if(!silent) refreshVidBtn();
+  }
+  $('vidBtn').onclick = startVideo;
+  $('vidStop').onclick = () => stopVideo(false);
+
   $('audBtn').onclick = () => playing ? stop() : start();
   $('audMode').onchange = () => { showModeHelp(); if (playing){ stop(); start(); } };
   setInterval(updateCap, 1500); showModeHelp();
-  return { updateCap };
+  return { updateCap, refreshVidBtn };
 })();
 
 /* ---- setup wizard ---- */
