@@ -87,3 +87,34 @@ aprs:
 
 One site can run all three at once — HackRF for the sweep, IC-9100 for HF decode and
 CAT, FTM-510DR for the 2 m/70 cm mesh — each on its own USB path.
+
+---
+
+## Drivers & plug-and-play
+
+Orca ships the driver *model*, not proprietary drivers. Three stories:
+
+| Interface | Devices | Driver | Install |
+|-----------|---------|--------|---------|
+| **WinUSB** | HackRF, RTL-SDR dongles | WinUSB | `orca --setup-drivers` binds it via **libwdi** (programmatic Zadig). Fallback: run **Zadig** once → select the device → **WinUSB** → Replace Driver. Linux/macOS: libusb, nothing to install. |
+| **USB-UART** | Icom CI-V, Yaesu/Kenwood CAT | CP210x / FTDI / Prolific | Win10/11 auto-install via Windows Update; the rig then appears under *Ports (COM & LPT)*. Linux: in-kernel. |
+| **USB Audio** | **SignaLink USB**, Digirig, CM108 fobs, every built-in-USB-sound-card rig | In-box USB-Audio class | Nothing to install — Windows/Linux/macOS bind it automatically. Pick the `USB Audio CODEC` device. |
+
+> **SignaLink** has no driver of its own — it's a TI USB codec. Orca's job is to
+> recognise it and use it as the rig's audio device; PTT is the SignaLink's VOX.
+
+```
+orca --setup-drivers      # bind WinUSB to SDRs, report the rest
+orca --devices            # what's plugged in, matched + driver status
+orca --list-radios        # the full supported catalog
+```
+
+## Supported radios
+
+Orca supports the **same 33-radio catalog as Tradewind Commander** (one shared
+list, `orca/data/radios.json`): Icom (IC-705/7100/7300/7610/9100/9700, IC-2730…),
+Yaesu (FT-991A, FT-710/FTDX10, FTM-400/300/200, FT-2980R, HTs), Kenwood (TH-D75/D74,
+TM-D710G, TM-V71A, TS-590/890), Elecraft/Flex via Hamlib `rigctld`, Xiegu
+(X6100/G90), SDR dongles, SignaLink/Digirig/CM108/AIOC interfaces, Mobilinkd,
+Direwolf/UZ7HO sound modems, and APRS-IS. `GET /api/radios` returns the catalog
+with each radio's subsystem and driver plan.

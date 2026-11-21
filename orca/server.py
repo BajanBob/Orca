@@ -583,6 +583,11 @@ def create_app(cfg: dict) -> FastAPI:
         from . import devices
         return {"devices": devices.detect()}
 
+    @app.get("/api/radios")
+    async def radios_list():
+        from . import radios
+        return {"source": radios.source(), "radios": radios.all_entries()}
+
     @app.get("/api/coverage")
     async def coverage(lo: float = 0, hi: float = 18e9):
         p = plan(lo, hi, orca.spectrum.receivers, orca.spectrum.frontends)

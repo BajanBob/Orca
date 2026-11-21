@@ -15,11 +15,23 @@ def main():
     ap.add_argument("--host")
     ap.add_argument("--port", type=int)
     ap.add_argument("--devices", action="store_true",
-                    help="list USB/serial radios (HackRF, IC-9100, Yaesu ...) and exit")
+                    help="list plugged-in USB/serial radios (HackRF, IC-9100, Yaesu ...) and exit")
+    ap.add_argument("--list-radios", action="store_true",
+                    help="print the supported radio catalog (shared with Tradewind Commander) and exit")
+    ap.add_argument("--setup-drivers", action="store_true",
+                    help="bind WinUSB to SDR dongles (Windows) and report driver status, then exit")
     a = ap.parse_args()
+    if a.setup_drivers:
+        from . import drivers
+        print(drivers.setup_report())
+        return
     if a.devices:
         from . import devices
         print(devices.report())
+        return
+    if a.list_radios:
+        from . import radios
+        print(radios.report())
         return
     path = a.config
     if not path:   # no --config: use ./site.yaml, else the bundled example (simulator)

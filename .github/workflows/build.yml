@@ -24,13 +24,13 @@ jobs:
       - name: Build Orca server (single .exe)
         run: >
           pyinstaller --noconfirm --clean --noupx --paths . --onefile --console --name orca-server
-          --add-data "orca/console;orca/console" --add-data "config;config"
+          --add-data "orca/console;orca/console" --add-data "config;config" --add-data "orca/data;orca/data"
           --collect-submodules uvicorn --collect-submodules websockets
           --collect-submodules orca packaging/orca_server.py
       - name: Build Orca Desktop (windowed app)
         run: >
           pyinstaller --noconfirm --clean --noupx --paths . --onefile --windowed --name OrcaDesktop
-          --add-data "orca/console;orca/console" --add-data "config;config"
+          --add-data "orca/console;orca/console" --add-data "config;config" --add-data "orca/data;orca/data"
           --collect-submodules uvicorn --collect-submodules websockets
           --collect-submodules orca --collect-all webview packaging/orca_desktop.py
       - name: Smoke test the server .exe
@@ -76,7 +76,7 @@ jobs:
       - name: Build Orca server (single binary)
         run: >
           pyinstaller --noconfirm --clean --onefile --name orca-server --paths .
-          --add-data "orca/console:orca/console" --add-data "config:config"
+          --add-data "orca/console:orca/console" --add-data "config:config" --add-data "orca/data:orca/data"
           --collect-submodules uvicorn --collect-submodules websockets
           --collect-submodules orca packaging/orca_server.py
       - name: Smoke test the Linux binary

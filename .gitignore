@@ -1,4 +1,6 @@
 data/
+!orca/data/
+!orca/data/**
 __pycache__/
 *.pyc
 .pytest_cache/

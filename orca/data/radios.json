@@ -1,0 +1,265 @@
+{
+ "source": "Tradewind Commander (BajanBob/Tradewind-Commander, app.py PRESETS) - shared catalog kept in parity",
+ "note": "Interface taxonomy: tnc in {sound, kiss_serial, kiss_tcp, none}; ptt in {CIV, YAESU_CAT, RTS, DTR, VOX, CM108, RIGCTLD}.",
+ "radios": [
+  {
+   "id": "generic_vox",
+   "label": "Generic soundcard + VOX (SignaLink USB, Easy Digi)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "note": "Turn the interface's VOX/delay knob low. Set TX audio so the radio deviates about 3 kHz."
+  },
+  {
+   "id": "signalink",
+   "label": "Tigertronics SignaLink USB",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "txdelay": 300,
+   "note": "Audio device: 'USB Audio CODEC'. The SignaLink keys the radio itself (VOX) - set its DLY knob to about 9 o'clock, TX knob low, and adjust until the radio deviates about 3 kHz. Use the radio jumper / cable for your model on the data or mic jack."
+  },
+  {
+   "id": "rtlsdr_audio",
+   "label": "RTL-SDR dongle via SDR++ / SDR# (receive only)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "rf_announce": false,
+   "note": "Receive-only. Tune SDR++ or SDR# to the APRS frequency (144.390 MHz in North America - check which frequency your island uses) in narrow FM, 12.5 kHz bandwidth. Send its audio to a virtual audio cable (e.g. VB-Audio Cable) and pick 'CABLE Output' as Tradewind's audio input. Heard packets are shown and can be gated with RX iGate; nothing is transmitted on RF."
+  },
+  {
+   "id": "rtlsdr_direwolf",
+   "label": "RTL-SDR dongle via rtl_fm + Direwolf (receive only)",
+   "tnc": "kiss_tcp",
+   "kiss_addr": "127.0.0.1:8001",
+   "rf_announce": false,
+   "note": "Receive-only. Run: rtl_fm -f 144.39M -s 24000 - | direwolf -r 24000 -D 1 -  (adjust the frequency for your area). Direwolf decodes and Tradewind connects to its KISS port 8001. Turn on RX iGate under MENU > APRS-IS to gate what the dongle hears."
+  },
+  {
+   "id": "digirig",
+   "label": "Digirig Mobile",
+   "tnc": "sound",
+   "ptt": "RTS",
+   "note": "Audio device is 'USB PnP Sound Device'. PTT port is the Digirig's serial port (COMx / /dev/ttyUSBx)."
+  },
+  {
+   "id": "aioc",
+   "label": "AIOC all-in-one cable (Baofeng/Kenwood-pin HTs)",
+   "tnc": "sound",
+   "ptt": "DTR",
+   "note": "AIOC keys on DTR with RTS low. Audio device shows as 'All-In-One-Cable'."
+  },
+  {
+   "id": "cm108",
+   "label": "CM108/CM119 USB fob with GPIO PTT",
+   "tnc": "sound",
+   "ptt": "CM108",
+   "cm108_gpio": 3,
+   "note": "Linux only: PTT port is /dev/hidrawN (give your user access via a udev rule)."
+  },
+  {
+   "id": "ic705",
+   "label": "Icom IC-705 (built-in USB sound card)",
+   "tnc": "sound",
+   "ptt": "RTS",
+   "note": "Audio: 'USB Audio CODEC'. PTT port: the IC-705 USB serial port. On the radio set USB SEND to RTS, DATA MOD to USB, and use FM-D (data) mode. For automatic tuning, set PTT to 'Icom CI-V' with address A4 and tick 'Tune the radio'."
+  },
+  {
+   "id": "ic9700",
+   "label": "Icom IC-9700 (built-in USB sound card)",
+   "tnc": "sound",
+   "ptt": "RTS",
+   "note": "Audio: 'USB Audio CODEC'. PTT port: first IC-9700 USB serial port. Set USB SEND to RTS, DATA MOD to USB, use FM-D. For automatic tuning, set PTT to 'Icom CI-V' with address A2 and tick 'Tune the radio'."
+  },
+  {
+   "id": "ic7100",
+   "label": "Icom IC-7100 (built-in USB sound card)",
+   "tnc": "sound",
+   "ptt": "RTS",
+   "note": "Audio: 'USB Audio CODEC'. Set USB SEND to RTS and DATA MOD to USB; use FM-D. For automatic tuning, set PTT to 'Icom CI-V' with address 88 and tick 'Tune the radio'."
+  },
+  {
+   "id": "ic9100",
+   "label": "Icom IC-9100 (built-in USB sound card, CI-V PTT)",
+   "tnc": "sound",
+   "ptt": "CIV",
+   "civ_addr": "7C",
+   "cat_baud": 9600,
+   "cat_tune": true,
+   "note": "One USB cable carries audio and CI-V. Audio: 'USB Audio CODEC'. PTT port: the IC-9100's USB serial port. On the radio set DATA MOD to USB, USB MOD Level about 25-50%, CI-V address 7C and CI-V baud 9600. With 'Tune the radio' on, Tradewind sets the frequency for you at power-on (2m on the main band): FM data for 1200 baud and Robust FM, USB data for Robust and Robust DX, and puts the radio back when you switch off. Close other CAT software (logger, WSJT-X) first - only one program can use the port."
+  },
+  {
+   "id": "ft991a",
+   "label": "Yaesu FT-991A (built-in USB sound card)",
+   "tnc": "sound",
+   "ptt": "RTS",
+   "note": "Audio: 'USB Audio CODEC'. PTT port: the 'Enhanced' COM port. Set the radio's PC keying / data PTT option to RTS and use DATA-FM. For automatic tuning to the APRS frequency, choose PTT 'Yaesu CAT' on the 'Standard' COM port at the radio's CAT baud rate (menu 031) and tick 'Tune the radio'."
+  },
+  {
+   "id": "ft2980",
+   "label": "Yaesu FT-2980R (mic + speaker jacks, via interface)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "txdelay": 350,
+   "tx_level": 0.3,
+   "note": "The FT-2980R has no data jack or CAT port. Use a soundcard interface with a cable for Yaesu's 8-pin modular mic jack and the 3.5 mm external speaker jack: SignaLink USB (VOX), or a Digirig with Yaesu mic cable (set PTT to Serial RTS). Check the cable's mic-jack pinout against the radio manual. Set squelch just closed, keep TX audio low (mic audio is pre-emphasised), and use Low or Mid power for long sessions."
+  },
+  {
+   "id": "yaesu_datajack",
+   "label": "Yaesu FT-7900R / FT-8800R / FT-8900R (DATA jack)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "note": "Use the 6-pin mini-DIN DATA jack with a SignaLink, Digirig or Easy Digi data cable. Set the radio's packet speed to 1200. PTT: VOX on a SignaLink, or Serial RTS on a Digirig."
+  },
+  {
+   "id": "yaesu_ftm",
+   "label": "Yaesu FTM-400 / FTM-300 / FTM-200 (DATA jack)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "note": "These radios' built-in APRS has no KISS mode, so connect a soundcard interface to the rear DATA jack (cable for your model). Set the data jack speed to 1200 bps and turn the radio's own APRS off on that band. PTT: VOX or Serial RTS (Digirig)."
+  },
+  {
+   "id": "rigctld",
+   "label": "Any radio via Hamlib rigctld (CAT PTT)",
+   "tnc": "sound",
+   "ptt": "RIGCTLD",
+   "ptt_port": "127.0.0.1:4532",
+   "note": "Start rigctld for your radio first. Pick the radio's USB audio device for in/out. Tick 'Tune the radio' to have Tradewind set the APRS frequency and FM data mode through Hamlib."
+  },
+  {
+   "id": "thd75",
+   "label": "Kenwood TH-D75 (built-in TNC, KISS)",
+   "tnc": "kiss_serial",
+   "kiss_baud": 9600,
+   "note": "Enable KISS mode on the radio, then choose its USB or Bluetooth serial port."
+  },
+  {
+   "id": "thd74",
+   "label": "Kenwood TH-D74 (built-in TNC, KISS)",
+   "tnc": "kiss_serial",
+   "kiss_baud": 9600,
+   "note": "Enable KISS mode on the radio, then choose its USB or Bluetooth serial port."
+  },
+  {
+   "id": "tmd710",
+   "label": "Kenwood TM-D710G / TM-D710GA (built-in TNC)",
+   "tnc": "kiss_serial",
+   "kiss_baud": 9600,
+   "note": "Put the built-in TNC in KISS mode (PACKET mode, then KISS ON). Use the COM port on the control head."
+  },
+  {
+   "id": "ic7300",
+   "label": "Icom IC-7300 (HF/6m, built-in USB sound card)",
+   "tnc": "sound",
+   "ptt": "CIV",
+   "civ_addr": "94",
+   "cat_baud": 19200,
+   "modem": "300",
+   "note": "One USB cable. Audio: 'USB Audio CODEC'. PTT: the radio's USB COM port, Icom CI-V address 94. On the radio set CI-V USB Baud Rate to 19200 (or Auto), DATA MOD to USB, and use USB-D mode. HF packet uses the 300-baud modem (e.g. 10.1476 MHz USB for HF APRS)."
+  },
+  {
+   "id": "ic7610",
+   "label": "Icom IC-7610 (HF/6m, built-in USB sound card)",
+   "tnc": "sound",
+   "ptt": "CIV",
+   "civ_addr": "98",
+   "cat_baud": 19200,
+   "modem": "300",
+   "note": "Audio: 'USB Audio CODEC'. PTT: Icom CI-V address 98 on the USB COM port. Set DATA MOD to USB and use USB-D. 300-baud HF modem."
+  },
+  {
+   "id": "ic2730",
+   "label": "Icom IC-2730 / IC-5100 / other FM mobiles (via interface)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "txdelay": 350,
+   "note": "These radios have no built-in USB sound card. Use a SignaLink (VOX) or Digirig (Serial RTS) with the cable for your radio's data or mic jack, and check the pinout in the radio's manual."
+  },
+  {
+   "id": "ts590",
+   "label": "Kenwood TS-590S / TS-590SG / TS-890S (HF, USB audio)",
+   "tnc": "sound",
+   "ptt": "RIGCTLD",
+   "ptt_port": "127.0.0.1:4532",
+   "modem": "300",
+   "note": "One USB cable carries audio ('USB Audio CODEC') and CAT. Run Hamlib rigctld for your model for PTT and tuning, and set the radio's data input to USB audio. 300-baud HF modem."
+  },
+  {
+   "id": "tmv71",
+   "label": "Kenwood TM-V71A / TM-V71E (data jack)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "note": "Use the 6-pin mini-DIN DATA jack with a SignaLink (VOX) or Digirig (Serial RTS) data cable. Set the data band and 1200 bps in the radio menu."
+  },
+  {
+   "id": "ft710",
+   "label": "Yaesu FT-710 / FTDX10 / FTDX101 (HF, USB audio)",
+   "tnc": "sound",
+   "ptt": "YAESU_CAT",
+   "cat_baud": 38400,
+   "modem": "300",
+   "note": "Audio: the radio's USB audio device. PTT: Yaesu CAT on the 'Standard' COM port at the radio's CAT rate (or Serial RTS on the 'Enhanced' port). Select USB as the data/rear audio input and use DATA-U. 300-baud HF modem."
+  },
+  {
+   "id": "yaesu_ht",
+   "label": "Yaesu FT-5DR / FT-3DR / FT-65 handhelds (audio cable)",
+   "tnc": "sound",
+   "ptt": "RTS",
+   "txdelay": 400,
+   "tx_level": 0.3,
+   "note": "Use a Digirig (Serial RTS) with the Yaesu handheld audio cable for your model; check the plug type in the manual. Turn the radio's VOX off, keep TX audio low, and use low power for long sessions."
+  },
+  {
+   "id": "x6100",
+   "label": "Xiegu X6100 (HF/6m, built-in USB audio)",
+   "tnc": "sound",
+   "ptt": "RIGCTLD",
+   "ptt_port": "127.0.0.1:4532",
+   "modem": "300",
+   "note": "Audio and CAT over USB (depends on firmware). Run Hamlib rigctld with the X6100 model for PTT and tuning. 300-baud HF modem."
+  },
+  {
+   "id": "xiegu_g90",
+   "label": "Xiegu G90 / G106 (HF, via DE-19 or Digirig)",
+   "tnc": "sound",
+   "ptt": "VOX",
+   "modem": "300",
+   "note": "These radios have no built-in sound card. Use the DE-19 expansion or a Digirig for audio; PTT by VOX, Serial RTS on a Digirig, or Hamlib rigctld through the CI-V port. 300-baud HF modem."
+  },
+  {
+   "id": "aioc_ht",
+   "label": "Radtel RT-890 / RT-4D, Quansheng UV-K5, Baofeng UV-5R (AIOC cable)",
+   "tnc": "sound",
+   "ptt": "DTR",
+   "txdelay": 400,
+   "tx_level": 0.3,
+   "note": "Use an AIOC all-in-one cable (Kenwood-style 2-pin plug). Audio device 'All-In-One-Cable'; PTT is DTR. Turn the radio's VOX off, keep TX audio low and squelch just closed. These handhelds are not made for long transmissions, so use low power."
+  },
+  {
+   "id": "mobilinkd",
+   "label": "Mobilinkd TNC3 / TNC4 (Bluetooth or USB)",
+   "tnc": "kiss_serial",
+   "kiss_baud": 115200,
+   "note": "Pair the TNC, then choose its serial port (rfcomm / Bluetooth COM)."
+  },
+  {
+   "id": "direwolf",
+   "label": "Direwolf (external sound modem)",
+   "tnc": "kiss_tcp",
+   "kiss_addr": "127.0.0.1:8001",
+   "note": "Direwolf's default KISS TCP port is 8001. Direwolf handles audio and PTT."
+  },
+  {
+   "id": "uz7ho",
+   "label": "UZ7HO Soundmodem (external sound modem)",
+   "tnc": "kiss_tcp",
+   "kiss_addr": "127.0.0.1:8100",
+   "note": "Enable the KISS server in Soundmodem (default port 8100)."
+  },
+  {
+   "id": "aprsis_only",
+   "label": "No radio - APRS-IS only",
+   "tnc": "none",
+   "rf_announce": false,
+   "note": "Announcements go to APRS-IS only."
+  }
+ ]
+}

@@ -132,9 +132,22 @@ class Found:
     profile: Profile | None = None
     kind: str = "serial"           # "serial" | "sdr"
 
+    def _driver(self) -> dict:
+        from . import drivers
+        p = self.profile
+        if self.kind == "sdr" or (p and p.subsystem == "sdr"):
+            pseudo = {"id": "rtlsdr", "label": "SDR dongle", "tnc": "none", "ptt": ""}
+        elif p and p.subsystem == "cat":
+            pseudo = {"id": p.key, "label": p.label, "tnc": "sound", "ptt": "CIV"}
+        elif p and p.subsystem == "tnc":
+            pseudo = {"id": p.key, "label": p.label, "tnc": "kiss_serial", "ptt": "RTS"}
+        else:
+            pseudo = {"id": "serial", "label": self.description, "tnc": "none", "ptt": "RTS"}
+        return drivers.plan_dict(pseudo)
+
     def as_dict(self) -> dict:
         p = self.profile
-        return {
+        d0 = {
             "port": self.port,
             "description": self.description,
             "vid": self.vid, "pid": self.pid,
@@ -149,6 +162,9 @@ class Found:
             "notes": p.notes if p else "",
             "config": _yaml_fragment(p, self.port) if p else "",
         }
+        d0["driver"] = self._driver()
+        d0["plug_and_play"] = d0["driver"]["plug_and_play"]
+        return d0
 
 
 def _serial_ports() -> list[Found]:
