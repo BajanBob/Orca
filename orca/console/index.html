@@ -141,6 +141,17 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
       <h2>Beryl agent <small>Proposes · you approve</small></h2>
       <div id="agent"><p class="muted">Select an incident.</p></div>
     </section>
+    <section class="card">
+      <h2>Intelligence <small>Phase 3 · on-device</small></h2>
+      <div class="tools"><button type="button" id="classifyBtn" class="pri">Classify signal at marker</button></div>
+      <div id="classOut" class="muted">Tap a signal, then classify it.</div>
+      <div id="emitters" class="muted"></div>
+    </section>
+    <section class="card">
+      <h2>Mesh <small>Phase 4 · off-grid sync</small></h2>
+      <div id="meshOut" class="muted"></div>
+      <div id="secureOut" class="muted" style="margin-top:6px"></div>
+    </section>
     <section class="card" id="simCard" hidden>
       <h2>Simulator <small>Training scenarios</small></h2>
       <div class="tools" id="scen"></div>
@@ -232,6 +243,7 @@ function onMsg(m){
       $('site').textContent = `${m.site.name} · ${m.site.node} · ${m.region.name.split(':')[0]}`;
       S.view = {lo:m.view.lo, hi:m.view.hi}; setChain(m.view); markRail(); drawAxis();
       S.nodes = m.nodes; S.sim = m.sim; S.protected = m.protected; S.scenarios = m.scenarios; renderScen();
+      S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; renderIntel();
       S.inc = new Map(m.incidents.map(i => [i.id, i])); S.events = m.events.reverse(); S.audit = m.audit; S.caps = m.captures;
       if (!S.sel && m.incidents.length) S.sel = m.incidents.at(-1).id;
       renderInc(); renderStream(); renderAudit(); renderCaps(); break;
@@ -242,7 +254,11 @@ function onMsg(m){
     case 'captures': S.caps = m.data; renderCaps(); break;
     case 'view': setChain(m.data); break;
     case 'health': S.health = {...S.health, ...m.data}; renderHealth(); break;
-    case 'result': if (m.data && m.data.ok === false) toast(m.data.error || 'Command failed'); else if (m.data?.name) toast(`Saved ${m.data.name}`); break;
+    case 'result':
+      if (m.data && m.data.ok === false) toast(m.data.error || 'Command failed');
+      else if (m.data?.result && m.data.result.label !== undefined) showClass(m.data.result);
+      else if (m.data?.name) toast(`Saved ${m.data.name}`);
+      break;
   }
 }
 function setChain(v){
@@ -438,8 +454,18 @@ let sTimer=null; function renderStreamSoon(){ if (!sTimer) sTimer=setTimeout(()=
 $('filter').addEventListener('input', renderStream);
 function renderAudit(){ $('audit').innerHTML = S.audit.slice(0,80).map(a => `<div><span class="muted">${hhmmss(a.ts)}</span> <b>${esc(a.actor)}</b>: ${esc(a.what)}${a.result?` <span class="muted">→ ${esc(a.result)}</span>`:''}</div>`).join(''); }
 function renderCaps(){ $('caps').innerHTML = S.caps.length ? S.caps.slice(0,40).map(c => `<div>${S.live?`<a href="${BASE}/api/captures/${encodeURIComponent(c.name)}" target="_blank" rel="noopener">${esc(c.name)}</a>`:esc(c.name)} <span class="muted">${(c.bytes/1e6).toFixed(c.bytes<1e5?3:1)} MB</span></div>`).join('') : '<p class="muted">No captures yet. Record IQ, save a spectrum or take a screenshot.</p>'; }
+function showClass(r){
+  if (r.error) { $('classOut').textContent = r.error; return; }
+  const bars = Object.entries(r.probs).sort((a,b)=>b[1]-a[1]).slice(0,3)
+    .map(([k,v])=>`${esc(k)} ${(v*100).toFixed(0)}%`).join(' · ');
+  const truth = r.sim_truth ? ` <span class="muted">(sim truth: ${esc(r.sim_truth)})</span>` : '';
+  $('classOut').innerHTML = `Modulation: <b>${esc(r.label)}</b> at ${(r.confidence*100).toFixed(0)}% confidence${truth}<br><span class="muted">${bars}</span>`
+    + (r.emitter ? `<br><span class="muted">${r.emitter.match?`matched emitter ${esc(r.emitter.id)} (×${r.emitter.count})`:`new emitter ${esc(r.emitter.id)} added to library`}</span>` : '');
+  if (r.emitter && !r.emitter.match && S.intel){ S.intel.emitters=[{id:r.emitter.id,label:r.label,center:S.marker||0,count:1},...(S.intel.emitters||[])]; renderIntel(); }
+}
 function renderHealth(){
   const h = S.health, ad = h.adapters || {};
+  if (h.mesh) { S.mesh = h.mesh; renderIntel(); }
   const label = k => { if (k.startsWith('gnss:')){ const n = S.nodes.find(x=>'gnss:'+x.id===k); return `${n?n.name:k.slice(5)} <span class="muted">Skylark2040 GNSS</span>`; }
     return {aprs:'APRS <span class="muted">Tradewind Commander</span>', uranus:'HF decodes <span class="muted">Uranus / WSJT-X</span>', syslog:'Network <span class="muted">syslog</span>'}[k] || esc(k); };
   $('nodes').innerHTML = Object.entries(ad).map(([k,v]) => { const off = /offline/.test(v), warn = /connecting|starting/.test(v);
@@ -450,6 +476,20 @@ function renderHealth(){
 }
 const SCEN = [['gnss_jam','GNSS jammer'],['gnss_spoof','GNSS spoofer'],['ch16_carrier','Stuck carrier ch 16'],['new_emitter','New 433 MHz emitter'],['repeater_down','Repeater down']];
 function renderScen(){ $('simCard').hidden = !S.sim; $('scen').innerHTML = SCEN.map(s => `<button type="button" class="${S.scenarios.includes(s[0])?'on':''}" data-sc="${s[0]}">${s[1]}</button>`).join(''); }
+function renderIntel(){
+  const i = S.intel, mesh = S.mesh, sec = S.secure;
+  if (i) $('emitters').innerHTML = `Emitter library: <b>${i.emitters.length}</b> known` + (i.emitters.length ? ' · ' + i.emitters.slice(0,3).map(e=>`${esc(e.label)} @ ${fmtF(e.center)} (×${e.count})`).join(', ') : '');
+  if (mesh) $('meshOut').innerHTML = `This node <b>${esc(mesh.node)}</b> · seen ${mesh.seen} · forwarded ${mesh.forwarded} · dropped ${mesh.dropped}. A single node until peers are configured; detections then sync over LoRa/VHF/HF with no internet.`;
+  if (sec) $('secureOut').innerHTML = sec.enabled
+    ? `<b>Secure module: on</b> · authority ${esc(sec.authority||'—')} · ${sec.keys} key(s) · floor ${sec.floor_mhz} MHz. ${esc(sec.boundary)}.`
+    : `<b>Secure module: off</b> <span class="muted">(government/defence edition)</span>. ${esc(sec.note)}`;
+}
+$('classifyBtn').onclick = () => {
+  const f = S.selEm ? S.selEm.f_center : S.marker;
+  if (f == null) { toast('Tap a signal on the spectrum first'); return; }
+  $('classOut').textContent = 'Classifying…';
+  send({cmd:'classify', freq:f, span: S.selEm ? Math.max(S.selEm.bw_occ*3,50e3) : 200e3});
+};
 $('scen').addEventListener('click', e => { const b=e.target.closest('[data-sc]'); if (!b) return; const on = !S.scenarios.includes(b.dataset.sc);
   S.scenarios = on ? [...S.scenarios, b.dataset.sc] : S.scenarios.filter(x=>x!==b.dataset.sc); renderScen(); send({cmd:'scenario', name:b.dataset.sc, on}); });
 setInterval(() => { $('clock').textContent = new Date().toISOString().slice(11,19)+' UTC'; }, 1000);
@@ -488,6 +528,10 @@ function startDemo(){
   $('conn').textContent = 'Demo (no server)'; $('connDot').className = 'dot warn';
   $('site').textContent = 'Barbados regional mesh · demo data';
   S.sim = true; S.scenarios = ['gnss_jam']; renderScen(); markRail(); drawAxis();
+  S.intel = {classes:['empty','am','fm','fsk','psk','ofdm','pulse','chirp'], emitters:[]};
+  S.mesh = {node:'BB-BGI-PORT', seen:0, forwarded:0, dropped:0};
+  S.secure = {enabled:false, note:"Encrypts and decrypts the operator's own communications on licensed, non-amateur frequencies above the floor; it does not defeat third-party encryption."};
+  renderIntel();
   S.nodes = [{id:'BB-BGI-PORT',name:'Bridgetown port'},{id:'BB-BGI-HARB',name:'Harbour master'},{id:'BB-HAST',name:'Hastings'},{id:'BB-GAIA',name:'Airport perimeter'}];
   S.health = {adapters:{'gnss:BB-BGI-PORT':'online (sim)','gnss:BB-BGI-HARB':'online (sim)','gnss:BB-HAST':'online (sim)','gnss:BB-GAIA':'online (sim)',aprs:'online (sim)',uranus:'online (sim)',syslog:'online (sim)'}, uranus:{decodes_15min:0, median_snr:null, band_hz:14074000}};
   renderHealth(); renderCaps();
@@ -536,6 +580,14 @@ function demoCommand(m){
   else if (m.cmd==='capture_iq'){ const name=`orca_demo_${(m.freq/1e6).toFixed(3)}MHz.sigmf-data`; S.caps.unshift({name, bytes:Math.round(Math.min(m.span*1.25*m.seconds, 4194304)*8)}); renderCaps(); demoAudit('Operator', `IQ capture ${name}`); setTimeout(()=>toast(`Saved ${name} (demo)`), 600); }
   else if (m.cmd==='capture_spectrum'){ const name=`orca_demo_${Date.now()}_spectrum.csv`; S.caps.unshift({name, bytes:24000}); renderCaps(); toast(`Saved ${name} (demo)`); }
   else if (m.cmd==='scenario'){ demoAudit('Operator', `simulator scenario ${m.name} ${m.on?'on':'off'}`); }
+  else if (m.cmd==='classify'){
+    const f=m.freq, lab = f>1.56e9&&f<1.59e9&&S.scenarios.includes('gnss_jam')?'chirp'
+      : f>87e6&&f<108e6?'fm' : f>1e9&&f<1.1e9?'pulse' : f<1.7e6?'am'
+      : f>2.4e9&&f<2.5e9?'ofdm' : f>700e6&&f<800e6?'ofdm':'fm';
+    const probs={}; S.intel.classes.forEach(c=>probs[c]=c===lab?0.9:0.014);
+    demoAudit('Beryl agent', `classified ${(f/1e6).toFixed(3)} MHz as ${lab} (90%)`);
+    setTimeout(()=>showClass({label:lab, top:lab, confidence:0.9, probs, sim_truth:lab}), 300);
+  }
 }
 
 markRail(); drawAxis(); renderInc(); renderReadout();

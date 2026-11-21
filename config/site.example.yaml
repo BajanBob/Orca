@@ -62,6 +62,21 @@ protected_extra:
 
 anomaly_z: 6.0
 
+# ---- Phase 4 mesh (off-grid sync) ------------------------------------------
+mesh: {peers: []}            # peers to sync with; empty = a mesh of one
+
+# ---- Secure module (government / defence edition) --------------------------
+# Disabled by default. When enabled it encrypts and DECRYPTS the operator's OWN
+# communications on licensed, non-amateur frequencies above floor_hz. It does
+# NOT defeat third-party encryption. Amateur allocations are always excluded.
+secure:
+  enabled: false
+  floor_hz: 148.0e6          # no secure operation below this (keeps out of 2 m)
+  authority: ""              # licence / tasking reference; required to operate
+  licensed_bands: []         # e.g. [[150.0e6, 174.0e6], [406.0e6, 420.0e6]]
+  keys_hex: []               # operator's own AES-256 keys, 64 hex chars each
+  baud: 1200
+
 agent:
   autorun_safe_steps: true     # Beryl runs non-transmitting steps itself
   llm:

@@ -44,6 +44,15 @@ DEFAULTS = {
     "syslog": {"mode": "sim", "port": 5514},
     "protected_extra": [],
     "anomaly_z": 6.0,
+    # Phase 4 mesh: peers for off-grid sync (empty = single node). Transport is
+    # wired per deployment (UDP/LoRa/VHF); the default is a mesh of one.
+    "mesh": {"peers": []},
+    # Government/defence secure module. Disabled by default. When enabled it
+    # encrypts and decrypts the operator's OWN communications on licensed,
+    # non-amateur frequencies above floor_hz. It does not defeat third-party
+    # encryption. Provide authority (licence/tasking ref), licensed_bands and keys.
+    "secure": {"enabled": False, "floor_hz": 148e6, "authority": "",
+               "licensed_bands": [], "keys_hex": [], "baud": 1200},
     "agent": {"autorun_safe_steps": True, "llm": {"enabled": False, "model": "claude-sonnet-5-5"}},
     "server": {"host": "0.0.0.0", "port": 8088},
 }

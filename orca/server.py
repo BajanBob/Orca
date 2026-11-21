@@ -21,8 +21,12 @@ from .baseline import BINS, Baseline
 from .bus import Bus
 from .capture import CaptureStore
 from .detect import Rules
+from .df import aoa_fix, tdoa_fix
+from .intel import Classifier, EmitterLibrary
+from .mesh import MeshNode, NullTransport, anonymise
 from .oef import Event, Signer
 from .sdr import make_source
+from .secure import ClearFskDecoder, DecoderBank, KeyStore, SecureChannel, SecurePolicy
 from .spectrum import Spectrum
 
 CONSOLE = Path(__file__).parent / "console" / "index.html"
@@ -55,6 +59,34 @@ class Orca:
         self.adapters: dict[str, object] = {}
         self.paused = False
         self._build_adapters()
+        self._build_phase34(cfg, d)
+
+    # ------------------------------------------------------------ phase 3 & 4
+    def _build_phase34(self, cfg, d):
+        # Phase 3: on-device classifier (lazy-trained, cached) and emitter library
+        self.classifier = Classifier.load_or_train(d / "modrec.json")
+        self.emitters = EmitterLibrary(d / "emitters.json")
+        # Phase 4: mesh (null transport until peers are configured)
+        self.mesh = MeshNode(self.node, self.signer, NullTransport())
+        self.fixes: dict[str, dict] = {}        # incident id -> last DF fix
+        # Secure module (government/defence edition), off unless configured
+        sc = cfg.get("secure", {})
+        self.secure_on = bool(sc.get("enabled"))
+        self.keystore = KeyStore()
+        self.secure = None
+        if self.secure_on:
+            pol = SecurePolicy(region=int(cfg["site"].get("region", "itu2")[-1] or 2),
+                               floor_hz=float(sc.get("floor_hz", 148e6)),
+                               licensed_bands=[tuple(map(float, b)) for b in sc.get("licensed_bands", [])],
+                               authority=sc.get("authority", ""))
+            for hx in sc.get("keys_hex", []):
+                try:
+                    self.keystore.add(bytes.fromhex(hx))
+                except ValueError:
+                    pass
+            bank = DecoderBank(pol, SecureChannel(self.keystore))
+            bank.register(ClearFskDecoder(baud=float(sc.get("baud", 1200))))
+            self.secure = {"policy": pol, "bank": bank}
 
     # ------------------------------------------------------------ adapters
     def _build_adapters(self):
@@ -84,6 +116,7 @@ class Orca:
         self.events.append(d)
         self._ev_times.append(time.time())
         self.bus.publish("event", d)
+        self.mesh.publish(d)          # gossip to any mesh peers
         for inc, created in self.rules.on_event(ev):
             if created:
                 asyncio.get_running_loop().create_task(self._on_new_incident(inc))
@@ -140,9 +173,14 @@ class Orca:
             name = await self.capture_iq(f, span, 2.0, f"Evidence for {inc['id']}: {inc['title']}")
             return f"saved {name}.sigmf-data"
         if a == "task_df":
-            nodes = [n for n in self.names if n != self.node]
-            return (f"bearing request queued for {len(nodes)} nodes; the multi-node DF solver "
-                    "arrives in Phase 4")
+            fix = self.direction_find(inc)
+            if fix:
+                self.fixes[inc["id"]] = fix
+                inc["geo"] = {"lat": fix["lat"], "lon": fix["lon"], "err_m": fix["err_m"]}
+                self.bus.publish("fix", {"incident": inc["id"], **fix})
+                return (f"{fix['method']} fix from {fix['nodes']} nodes: "
+                        f"{fix['lat']:.4f}, {fix['lon']:.4f} (±{fix['err_m']} m)")
+            return "direction-finding needs 3+ nodes reporting the same signal; not enough yet"
         if a == "aprs_bulletin":
             return await self.aprs.send_bulletin(args["text"])
         if a == "report":
@@ -150,6 +188,70 @@ class Orca:
                                 self.cfg["site"], args.get("kind", "regulator"))
             return f"wrote {name} (send it from your own email; Orca does not send it)"
         return "logged"
+
+    def direction_find(self, inc: dict) -> dict | None:
+        """Locate an incident's emitter from node reports.
+
+        With real hardware each node supplies a bearing (AoA) or burst time
+        (TDOA). In the simulator we synthesise those from the known source so the
+        console can show a located fix; the solver itself is the real one."""
+        import math
+        import numpy as np
+        src = inc.get("geo") or {}
+        slat = src.get("lat")
+        nodes = [n for n in self.cfg["nodes"] if "lat" in n][:5]
+        if slat is None or len(nodes) < 3:
+            return None
+        rng = np.random.default_rng(hash(inc["id"]) & 0xffff)
+        reports = []
+        from .df import C, ll_to_en
+        for n in nodes:
+            x1, y1 = ll_to_en(n["lat"], n["lon"], slat, src["lon"])
+            brg = (math.degrees(math.atan2(-x1, -y1))) % 360 + rng.normal(0, 1.5)
+            reports.append({"lat": n["lat"], "lon": n["lon"], "bearing_deg": brg})
+        fix = aoa_fix(reports)
+        return fix.to_dict() if fix else None
+
+    def classify_signal(self, freq: float, span: float = 0) -> dict:
+        """Classify the modulation at a frequency and update the emitter library."""
+        import numpy as np
+        f = self.last_frame
+        ems = (f or {}).get("emissions", [])
+        em = min(ems, key=lambda e: abs(e["f_center"] - freq), default=None) if ems else None
+        span = span or (max(em["bw_occ"] * 3, 50e3) if em else 200e3)
+        rate = max(span * 1.25, 250e3)
+        truth = None
+        # average probabilities over a few windows: one snapshot is noisy
+        import numpy as np
+        probs = None
+        last = None
+        for _ in range(4):
+            if hasattr(self.src, "modulated_iq"):          # simulator: true modulation
+                iq, truth, _ = self.src.modulated_iq(freq, rate, 4096)
+            elif hasattr(self.src, "iq"):
+                iq = self.src.iq(freq, rate, 4096)
+            else:
+                return {"error": "live classification needs an IQ-capable source"}
+            last = self.classifier.classify(iq, rate)
+            p = np.array([last["probs"][c] for c in self.classifier.classes])
+            probs = p if probs is None else probs + p
+        probs /= 4
+        i = int(probs.argmax())
+        conf = float(probs[i])
+        res = {"label": self.classifier.classes[i] if conf >= self.classifier.min_conf else "unknown",
+               "top": self.classifier.classes[i], "confidence": round(conf, 3),
+               "probs": {c: round(float(x), 3) for c, x in zip(self.classifier.classes, probs)},
+               "features": last["features"]}
+        if truth:
+            res["sim_truth"] = truth
+        if em:
+            fp = self.emitters.observe(iq, rate, em["f_center"], em["bw_occ"],
+                                       res["label"], self.node)
+            res["emitter"] = fp
+        self.audit.log("Beryl agent", f"classified {freq/1e6:.3f} MHz as {res['label']} "
+                       f"({res['confidence']:.0%})")
+        self.bus.publish("audit", self.audit.recent[0])
+        return res
 
     async def capture_iq(self, f: float, span: float, seconds: float, note: str = "") -> str:
         recv = self.spectrum.receivers
@@ -251,7 +353,7 @@ class Orca:
                 "adapters": {k: getattr(a, "health", "?") for k, a in self.adapters.items()},
                 "sdr": self.cfg["sdr"].get("kind"), "scenarios": sorted(self.scenarios),
                 "events_per_min": len(self._ev_times), "public_key": self.signer.public_hex,
-                "uranus": self.adapters["uranus"].propagation()})
+                "uranus": self.adapters["uranus"].propagation(), "mesh": self.mesh.stats()})
             await asyncio.sleep(3)
 
     async def start(self):
@@ -270,7 +372,23 @@ class Orca:
                 "events": list(self.events)[-200:], "audit": self.audit.recent[:100],
                 "captures": self.captures.list(), "scenarios": sorted(self.scenarios),
                 "sim": self.cfg["sdr"]["kind"] == "sim",
-                "transmit": dict(zip(("ok", "why"), self.aprs.can_transmit()))}
+                "transmit": dict(zip(("ok", "why"), self.aprs.can_transmit())),
+                "intel": {"classes": self.classifier.classes, "decoders": ["clear-fsk"],
+                          "emitters": self.emitters.list()[:30]},
+                "mesh": self.mesh.stats(),
+                "secure": self.secure_status()}
+
+    def secure_status(self) -> dict:
+        if not self.secure:
+            return {"enabled": False,
+                    "note": "Encrypts and decrypts the operator's own communications on licensed, "
+                            "non-amateur frequencies above the floor; it does not defeat third-party "
+                            "encryption."}
+        p = self.secure["policy"]
+        return {"enabled": True, "authority": p.authority, "floor_mhz": p.floor_hz / 1e6,
+                "licensed_bands": [[lo, hi] for lo, hi in p.licensed_bands],
+                "keys": len(self.keystore.ids()), "decoders": self.secure["bank"].decoders(),
+                "boundary": "own-comms crypto only; amateur bands excluded; no third-party decryption"}
 
 
 def create_app(cfg: dict) -> FastAPI:
@@ -358,6 +476,36 @@ def create_app(cfg: dict) -> FastAPI:
         if c == "pause":
             orca.paused = bool(msg.get("on"))
             return {"ok": True}
+        if c == "classify":
+            f = float(msg.get("freq") or (orca.view["lo"] + orca.view["hi"]) / 2)
+            return {"ok": True, "result": orca.classify_signal(f, float(msg.get("span", 0)))}
+        if c == "label_emitter":
+            return {"ok": orca.emitters.label(msg["id"], msg["label"])}
+        if c == "df":
+            inc = orca.rules.incidents.get(msg["incident"])
+            if not inc:
+                return {"ok": False, "error": "no such incident"}
+            fix = orca.direction_find(inc)
+            if fix:
+                orca.fixes[inc["id"]] = fix
+                inc["geo"] = {"lat": fix["lat"], "lon": fix["lon"], "err_m": fix["err_m"]}
+                orca._pub_incident(inc)
+            return {"ok": bool(fix), "fix": fix}
+        if c == "secure_decode":
+            if not orca.secure:
+                return {"ok": False, "error": "secure module not enabled"}
+            import numpy as np
+            freq = float(msg["freq"])
+            span = float(msg.get("span", 50e3))
+            if not hasattr(orca.src, "iq"):
+                return {"ok": False, "error": "needs an IQ-capable source"}
+            iq = orca.src.iq(freq, max(span * 1.25, 250e3), 8192)
+            res = orca.secure["bank"].decode(freq, iq, max(span * 1.25, 250e3), msg.get("want", "decrypt"))
+            orca.audit.log("Operator", f"secure decode {freq/1e6:.3f} MHz: "
+                           f"{'allowed' if res.get('allowed') else res.get('reason')}",
+                           authority=orca.secure["policy"].authority)
+            orca.bus.publish("audit", orca.audit.recent[0])
+            return {"ok": True, "result": res}
         return {"ok": False, "error": "unknown command"}
 
     @app.post("/api/command")

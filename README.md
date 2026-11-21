@@ -81,10 +81,41 @@ orca/
   agents.py       Beryl triage, reports, audit
   capture.py      SigMF IQ, spectrum CSV, screenshots
   adapters/       skylark_gnss, tradewind_aprs, uranus_wsjtx, network_syslog
+  intel/          Phase 3: modulation classifier, emitter fingerprinting, features
+  mesh.py         Phase 4: signed store-and-forward mesh + federation
+  df.py           Phase 4: AoA and TDOA direction-finding solvers
+  secure/         government/defence module: policy, own-comms crypto, decoder
   server.py       FastAPI + WebSocket
   console/        touchscreen console (also runs in demo mode with no server)
 ```
 
-## Still to come (Phase 3–4)
+## Phase 3: intelligence (built)
 
-On-device neural modulation/emitter classifiers, the multi-node direction-finding solver (the DF step currently queues the request), MeshNet sync over LoRa/VHF/HF, and federated sharing between sites.
+On-device, no cloud and no GPU:
+
+- **Modulation classifier** (`orca/intel/`): a small NumPy neural net recognises AM, FM, FSK, PSK, OFDM-like, pulsed (radar), swept (chirp/jammer) and empty noise from a short IQ snippet (~92% on held-out synthetic signals; FM/FSK is the natural overlap). Low-confidence results are reported as "unknown" rather than guessed. Tap a signal and press **Classify** in the console.
+- **Emitter fingerprinting**: each detection is matched to a library so a transmitter is recognised again ("the jammer from Tuesday"). New ones are added; you can label them.
+
+## Phase 4: mesh and scale (built)
+
+- **MeshNet** (`orca/mesh.py`): nodes gossip signed events to their peers and forward what they haven't seen, so a detection reaches the whole mesh with no internet. Only valid Ed25519 signatures are accepted and forwarded; duplicates and loops are dropped. Transports are pluggable (in-process, UDP, and a KISS helper for LoRa/packet radio).
+- **Direction finding** (`orca/df.py`): the Phase 2 DF stub is now a real solver. Angle-of-arrival (bearings) and TDOA (arrival times) both locate an emitter by least squares from three or more nodes; ~9 m error with 30 ns timing noise in testing. The jamming playbook's DF step now returns a located fix.
+- **Federation**: `anonymise()` shares a coarse view (no raw IQ, rounded position) between sites that opt in.
+
+## Secure module (government / defence edition)
+
+Off by default; enable under `secure:` in the config. It provides:
+
+- **Encryption and decryption of the operator's own communications** (AES-256-GCM) on frequencies they are licensed for, with keys they provision. A received frame whose key the operator does not hold is **reported, never attacked**.
+- **A pluggable signal decoder** (`orca/secure/`) that demodulates and decodes on licensed frequencies; the base platform ships a clear-mode AFSK/FSK decoder, and operators add decoders for the standards they are authorised to handle.
+
+Two boundaries are enforced in code, not configuration:
+
+1. **Amateur bands are excluded**, and nothing runs below the 148 MHz floor. ITU and national rules prohibit encrypting amateur-radio traffic, so secure operation is confined to non-amateur allocations the operator is licensed for.
+2. **Orca does not defeat third-party encryption.** It holds no capability to recover a key it was not given or to break encryption it is not party to, and the decoder will not try. This keeps the product lawful to sell and operate.
+
+The secure module is two-way, so transmit and encryption also require a recorded operating authority and a matching licensed band. See `orca/secure/policy.py`.
+
+## Still to come
+
+Hardware-in-the-loop trials on real receivers, protocol-specific decoders (P25/DMR/TETRA framing — operator-supplied), and live multi-node DF with time-synced captures.

@@ -134,6 +134,45 @@ class SimSource(Source):
             spec[m] += (self.rng.normal(size=k) + 1j * self.rng.normal(size=k)) * a / math.sqrt(2)
         return (np.fft.ifft(spec) * math.sqrt(n)).astype(np.complex64)
 
+    # Map an emitter to a modulation family, so narrowband captures carry a true
+    # modulated waveform the classifier can recognise (the painted-spectrum path
+    # above is for wide sweeps only).
+    @staticmethod
+    def _mod_of(e: "Emitter") -> str:
+        n = e.name.lower()
+        if e.kind == "chirp" or "lora" in n:
+            return "chirp"
+        if e.kind == "pulse" or "radar" in n or "ads-b" in n or "adsb" in n:
+            return "pulse"
+        if "gps" in n or "gnss" in n:
+            return "empty"            # spread-spectrum, below noise
+        if any(k in n for k in ("lte", "wi-fi", "wifi", "starlink", "ofdm", "5g", "ku ", "satellite tv")):
+            return "ofdm"
+        if any(k in n for k in ("am broadcast", "wefax", "wwv", "atis", "time signal")):
+            return "am"
+        if any(k in n for k in ("fm broadcast", "repeater", "marine", "inmarsat", "iridium")):
+            return "fm"
+        if any(k in n for k in ("aprs", "ais", "dsc", "msk", "vlf", "ft8", "wspr", "dmr", "p25")):
+            return "fsk"
+        return "fm"
+
+    def modulated_iq(self, fc: float, rate: float, n: int) -> tuple[np.ndarray, str, "Emitter | None"]:
+        """IQ for the strongest active emitter in the tuned span, truly modulated.
+        Returns (iq, modulation_family, emitter)."""
+        from .intel.synth import make
+        cands = [e for e in self.emitters if abs(e.f - fc) < rate / 2 and self._active(e)]
+        if not cands:
+            return self.iq(fc, rate, n), "empty", None
+        e = max(cands, key=lambda x: x.p)
+        fam = self._mod_of(e)
+        base = make(fam, n, rate, self.rng) if fam != "empty" else self.iq(fc, rate, n)
+        off = e.f - fc
+        if fam != "empty":
+            t = np.arange(n) / rate
+            base = base.astype(np.complex64) * np.exp(2j * np.pi * off * t).astype(np.complex64)
+            base = base * 10 ** ((e.p - 20) / 20) + self.iq(fc, rate, n) * 0.3
+        return base.astype(np.complex64), fam, e
+
     def span_psd(self, lo: float, hi: float, nbins: int, rbw_ref: float = 10e3) -> np.ndarray:
         """Fast path for very wide spans: power per display bin (dB), no IQ."""
         edges = np.linspace(lo, hi, nbins + 1)
