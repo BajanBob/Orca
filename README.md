@@ -85,10 +85,22 @@ orca/
   mesh.py         Phase 4: signed store-and-forward mesh + radio transport + federation
   df.py           Phase 4: AoA and TDOA direction-finding solvers
   tropo.py        troposcatter experiment: link budget + SNR/fading/availability
+  cognition.py    situation engine (fused assessment + prediction) + Ask Orca
+  forecast.py     anomaly, emitter-reappearance and propagation forecasting
+  chat.py         burst chat over the mesh (clear on ham, encrypted on secure)
   secure/         government/defence module: policy, own-comms crypto, decoder
   server.py       FastAPI + WebSocket
   console/        touchscreen console (also runs in demo mode with no server)
 ```
+
+## Cognition: Orca's brain
+
+A layer above the detectors that makes Orca feel like an analyst, not a dashboard. On-device and deterministic by default; add Claude for richer reasoning.
+
+- **Situation engine** (`orca/cognition.py`): fuses every signal — RF, cyber, GNSS, mesh, HF — into a small number of ranked **situations**, each with a plain-language assessment and a prediction of what's likely next. It correlates across domains: GNSS jamming plus network login failures in the same window becomes one *coordinated electronic + cyber attack* situation, not two unrelated alerts; jamming on several nodes becomes *area GNSS denial*.
+- **Ask Orca**: type a question in the console — "what's the situation?", "any jamming this hour?", "strongest signal on 2m", "show GPS", "is the band open for tropo?" — and Orca answers and acts (tunes the spectrum, points you at the incident). Rule-based so it works with no internet; defers to Claude when configured.
+- **Forecasting** (`orca/forecast.py`): warns before things happen — spectrum-anomaly risk from the baseline trend, when a periodic emitter will next appear, and when a troposcatter path is likely to open (diurnal model, with a hook for real pressure/space-weather data).
+- **Claude reasoning** (optional): set `cognition.llm.enabled` and `ANTHROPIC_API_KEY` to have Claude write the situation assessment and course-of-action options, with a clean fall-back to the on-device assessment when offline.
 
 ## Phase 3: intelligence (built)
 

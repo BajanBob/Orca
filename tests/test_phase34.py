@@ -299,3 +299,58 @@ def test_radio_transport_queues_bursts_through_fades():
     rt.link_quality = 1.0                 # opening
     rt.flush()
     assert rt.pending == 0 and rt.sent == 3
+
+
+# ---------------------------------------------------------------- cognition
+from orca.cognition import SituationEngine, AskOrca, family
+from orca import forecast
+
+
+def test_situation_engine_correlates_cross_domain():
+    eng = SituationEngine({"A": "Port", "B": "Harbour"})
+    now = time.time()
+    for n in ("A", "B"):
+        eng.observe_incident({"id": "INC-" + n, "rule": "gnss_jam", "status": "open",
+                              "severity": "high", "nodes": ["A", "B"], "title": "GNSS jamming"})
+    eng.observe_event({"class": "net.auth.fail", "node": "A", "ts": now, "data": {}})
+    eng.observe_event({"class": "net.auth.fail", "node": "A", "ts": now, "data": {}})
+    top = eng.picture(now)[0]
+    assert top["id"] == "coordinated-ew-cyber" and top["severity"] == "critical"
+    assert "coordinated" in top["assessment"].lower() and top["prediction"]
+
+
+def test_situation_engine_nominal_and_multinode_denial():
+    eng = SituationEngine({"A": "Port", "B": "Harbour"})
+    assert eng.picture()[0]["id"] == "nominal"
+    for n in ("A", "B"):
+        eng.observe_incident({"id": n, "rule": "gnss_jam", "status": "open", "severity": "high",
+                              "nodes": ["A", "B"], "title": "x"})
+    p = eng.picture()[0]
+    assert p["id"] == "gnss-denial" and "area" in p["title"]
+
+
+def test_ask_orca_answers():
+    eng = SituationEngine({"A": "Port"})
+    now = time.time()
+    eng.observe_event({"class": "rf.gnss.jamming", "node": "A", "ts": now, "data": {}})
+    state = {"nodes": [], "incidents": [{"status": "open", "title": "GNSS jamming", "severity": "critical"}],
+             "emitters": [], "view": {"lo": 144e6, "hi": 146e6},
+             "last_frame": {"emissions": [{"f_center": 145e6, "snr_db": 30, "bw_occ": 12e3}]}, "tropo": None}
+    ask = AskOrca(eng, lambda: state)
+    assert "jamming" in ask.ask("any jamming this hour?")["answer"].lower()
+    assert ask.ask("show gps")["action"]["view"][0] == 1565e6
+    assert "145" in ask.ask("strongest signal on 2m")["answer"]
+    assert "open" in ask.ask("open incidents")["answer"].lower()
+    assert ask.ask("what's the situation?")["situations"]
+
+
+def test_forecasts():
+    assert forecast.anomaly_risk([2, 3, 4, 5, 6, 7], 100)["risk"] > 0.2
+    assert forecast.anomaly_risk([], 0)["risk"] == 0.0
+    na = forecast.next_appearance([30, 31, 29, 30], time.time() - 5)
+    assert na["periodic"] and 25 <= na["period_s"] <= 35
+    assert forecast.next_appearance([10, 400], time.time())["periodic"] is False
+    op = forecast.tropo_opening(time.time())
+    assert 0 <= op["opening"] <= 1 and op["verdict"] in ("enhanced", "normal", "poor")
+    assert forecast.tropo_opening(time.time(), pressure_hpa=1028, trend_hpa=1)["opening"] >= \
+           forecast.tropo_opening(time.time(), pressure_hpa=1000, trend_hpa=-2)["opening"]

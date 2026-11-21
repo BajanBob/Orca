@@ -21,7 +21,9 @@ from .baseline import BINS, Baseline
 from .bus import Bus
 from .capture import CaptureStore
 from .chat import BurstChat
+from .cognition import AskOrca, SituationEngine, reason
 from .detect import Rules
+from . import forecast as forecast_mod
 from .df import aoa_fix, tdoa_fix
 from .intel import Classifier, EmitterLibrary
 from .mesh import MeshNode, NullTransport, RadioTransport, anonymise
@@ -111,6 +113,17 @@ class Orca:
             self.secure["policy"] if self.secure else None)
         # route chat events arriving from mesh peers into the chat log
         self.mesh.on_event = self._on_mesh_event
+        # Cognition: the fused situation picture + natural-language queries
+        self.cognition = SituationEngine(self.names)
+        self.ask = AskOrca(self.cognition, self._ask_state)
+        self._anom_hist: deque = deque(maxlen=60)
+
+    def _ask_state(self) -> dict:
+        return {"nodes": self.cfg["nodes"],
+                "incidents": [{k: v for k, v in i.items() if k != "ctx"}
+                              for i in self.rules.incidents.values()],
+                "emitters": self.emitters.list(), "view": self.view,
+                "last_frame": self.last_frame, "tropo": self.tropo_snapshot()}
 
     def _on_mesh_event(self, ev: dict):
         if not self.chat.on_event(ev):
@@ -148,8 +161,10 @@ class Orca:
         self.events.append(d)
         self._ev_times.append(time.time())
         self.bus.publish("event", d)
+        self.cognition.observe_event(d)
         self.mesh.publish(d)          # gossip to any mesh peers
         for inc, created in self.rules.on_event(ev):
+            self.cognition.observe_incident(inc)
             if created:
                 asyncio.get_running_loop().create_task(self._on_new_incident(inc))
             self._pub_incident(inc)
@@ -417,6 +432,8 @@ class Orca:
     def _check_emissions(self, fr, z, lo, hi):
         span = hi - lo
         thr = self.cfg["anomaly_z"]
+        if len(z):
+            self._anom_hist.append(float(z.max()))      # feed the anomaly forecaster
         for e in fr.emissions:
             zi = float(z[min(BINS - 1, int((e.f_center - lo) / span * BINS))]) if span > 0 else 0
             if zi >= thr and not self._throttled(f"anom:{int(e.f_center // 50e3)}", 5):
@@ -449,6 +466,8 @@ class Orca:
                 "sdr": self.cfg["sdr"].get("kind"), "scenarios": sorted(self.scenarios),
                 "events_per_min": len(self._ev_times), "public_key": self.signer.public_hex,
                 "uranus": self.adapters["uranus"].propagation(), "mesh": self.mesh_stats()})
+            self.bus.publish("cognition", {"situations": self.cognition.picture(),
+                                           "forecasts": self.forecasts()})
             await asyncio.sleep(3)
 
     async def start(self):
@@ -477,7 +496,28 @@ class Orca:
                 "tropo": self.tropo_snapshot(),
                 "chat": {"callsign": self.chat.callsign, "secure_available": self.secure is not None,
                          "log": self.chat.recent(60)},
+                "cognition": {"situations": self.cognition.picture(), "forecasts": self.forecasts()},
                 "secure": self.secure_status()}
+
+    def forecasts(self) -> dict:
+        import time as _t
+        from .baseline import hour_of_week
+        out = {"anomaly": forecast_mod.anomaly_risk(list(self._anom_hist), hour_of_week(_t.time())),
+               "propagation": forecast_mod.tropo_opening(_t.time(), self.cfg["site"].get("lat", 13.1))}
+        # next reappearance of the most periodic emitter in the library
+        best = None
+        for e in self.emitters.emitters:
+            if e["count"] >= 3:
+                best = e
+                break
+        if best:
+            # approximate intervals from first/last seen and count
+            span = max(1.0, best["last_seen"] - best["first_seen"])
+            iv = [span / max(1, best["count"] - 1)] * (best["count"] - 1)
+            na = forecast_mod.next_appearance(iv, best["last_seen"])
+            if na:
+                out["emitter"] = {"id": best["id"], "label": best["label"], **na}
+        return out
 
     def mesh_stats(self) -> dict:
         s = self.mesh.stats()
@@ -613,6 +653,18 @@ def create_app(cfg: dict) -> FastAPI:
             if res.get("ok"):
                 orca.bus.publish("chat", orca.chat.recent(1)[0])
             return res
+        if c == "ask":
+            res = orca.ask.ask(str(msg.get("q", "")))
+            act = res.get("action")
+            if act and act.get("view"):
+                orca.set_view(float(act["view"][0]), float(act["view"][1]))
+            orca.audit.log("Operator", f"asked: {str(msg.get('q',''))[:80]}")
+            # optional Claude reasoning on the top situation
+            if res.get("situations") and orca.cfg.get("cognition", {}).get("llm", {}).get("enabled"):
+                rich = await reason(res["situations"][0], orca.cfg["cognition"]["llm"])
+                if rich:
+                    res["reasoning"] = rich
+            return {"ok": True, **res}
         if c == "label_emitter":
             return {"ok": orca.emitters.label(msg["id"], msg["label"])}
         if c == "df":

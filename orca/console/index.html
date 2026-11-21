@@ -137,6 +137,13 @@ label input,label select{margin-top:2px}
   </section>
 
   <aside class="side">
+    <section class="card" id="cogCard">
+      <h2>Cognition <small>Orca's assessment · on-device</small></h2>
+      <div class="row"><input id="askIn" placeholder="Ask Orca: what's the situation? / any jamming this hour? / strongest on 2m" aria-label="Ask Orca" style="flex:1 1 220px"><button type="button" class="pri" id="askBtn">Ask</button></div>
+      <div id="askOut" class="note" hidden></div>
+      <div id="sitOut"></div>
+      <div id="fcOut" class="muted"></div>
+    </section>
     <section class="card">
       <h2>Incidents <small id="incCount"></small></h2>
       <div class="queue" id="queue"></div>
@@ -271,7 +278,7 @@ function onMsg(m){
       $('site').textContent = `${m.site.name} · ${m.site.node} · ${m.region.name.split(':')[0]}`;
       S.view = {lo:m.view.lo, hi:m.view.hi}; setChain(m.view); markRail(); drawAxis();
       S.nodes = m.nodes; S.sim = m.sim; S.protected = m.protected; S.scenarios = m.scenarios; renderScen();
-      S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; S.tropo = m.tropo; S.chat = m.chat; renderIntel(); renderChat();
+      S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; S.tropo = m.tropo; S.chat = m.chat; S.cognition = m.cognition; renderIntel(); renderChat(); renderCognition();
       if (m.tropo && m.tropo.predicted) { showBudget(m.tropo.predicted, 'tpOut'); $('tpRun').hidden=true; $('tpStop').hidden=false; }
       S.inc = new Map(m.incidents.map(i => [i.id, i])); S.events = m.events.reverse(); S.audit = m.audit; S.caps = m.captures;
       if (!S.sel && m.incidents.length) S.sel = m.incidents.at(-1).id;
@@ -284,7 +291,8 @@ function onMsg(m){
     case 'view': setChain(m.data); break;
     case 'health': S.health = {...S.health, ...m.data}; renderHealth(); break;
     case 'result':
-      if (m.data && m.data.ok === false) toast(m.data.error || 'Command failed');
+      if (m.data && m.data.answer !== undefined) showAsk(m.data);
+      else if (m.data && m.data.ok === false) toast(m.data.error || 'Command failed');
       else if (m.data?.budget) showBudget(m.data.budget, 'tpOut');
       else if (m.data?.predicted) { showBudget(m.data.predicted, 'tpOut'); $('tpLive').textContent='Measuring…'; }
       else if (m.data?.result && m.data.result.label !== undefined) showClass(m.data.result);
@@ -292,6 +300,7 @@ function onMsg(m){
       break;
     case 'tropo': S.tropo = m.data; showTropoLive(m.data); break;
     case 'chat': if (S.chat){ S.chat.log = [...(S.chat.log||[]), m.data]; renderChat(); } break;
+    case 'cognition': S.cognition = m.data; renderCognition(); break;
   }
 }
 function setChain(v){
@@ -537,6 +546,30 @@ const MODES={cw:'CW 100 Hz',ssb:'SSB 2.5 kHz',ft8:'FT8 50 Hz',msk144:'MSK144 500
 $('tpCalc').onclick = () => { $('tpOut').textContent='Computing…'; send({cmd:'tropo_budget', ...tpParams()}); };
 $('tpRun').onclick = () => { send({cmd:'tropo_start', ...tpParams(), name:`Tropo ${$('tpDist').value} km`}); $('tpRun').hidden=true; $('tpStop').hidden=false; };
 $('tpStop').onclick = () => { send({cmd:'tropo_stop'}); $('tpRun').hidden=false; $('tpStop').hidden=true; $('tpLive').textContent=''; };
+const SEVCLR={critical:'var(--crit)',high:'var(--crit)',medium:'var(--warn)',info:'var(--sea)'};
+function renderCognition(){
+  const c = S.cognition; if (!c) return;
+  const sits = c.situations||[];
+  $('sitOut').innerHTML = sits.slice(0,3).map((s,i)=>{
+    const clr = SEVCLR[s.severity]||'var(--mute)';
+    return `<div class="note" style="border-left:3px solid ${clr};margin-top:8px">
+      <b>${esc(s.title)}</b> <span class="sev ${s.severity}">${esc(s.severity)}</span> <span class="muted">${(s.confidence*100).toFixed(0)}%</span>
+      <br>${esc(s.assessment)}
+      <br><span class="muted">→ ${esc(s.prediction)}</span></div>`;
+  }).join('');
+  const f = c.forecasts||{};
+  const bits = [];
+  if (f.anomaly) bits.push(`anomaly risk <b>${(f.anomaly.risk*100).toFixed(0)}%</b> (${esc(f.anomaly.basis)})`);
+  if (f.propagation) bits.push(`troposcatter <b>${esc(f.propagation.verdict)}</b> (${(f.propagation.opening*100).toFixed(0)}%)`);
+  if (f.emitter && f.emitter.periodic) bits.push(`${esc(f.emitter.label)} likely again in ~${Math.max(0,Math.round(f.emitter.eta_s))}s`);
+  $('fcOut').innerHTML = bits.length ? '<b>Forecast:</b> ' + bits.join(' · ') : '';
+}
+function showAsk(r){
+  const o=$('askOut'); o.hidden=false;
+  o.innerHTML = `<b>${esc(r.answer)}</b>` + (r.reasoning ? `<br><span class="muted">${esc(r.reasoning.text)}</span>` : '');
+}
+$('askBtn').onclick = () => { const q=$('askIn').value.trim(); if(!q) return; $('askOut').hidden=false; $('askOut').textContent='…'; send({cmd:'ask', q}); $('askIn').value=''; };
+$('askIn').addEventListener('keydown', e => { if(e.key==='Enter') $('askBtn').click(); });
 function renderChat(){
   const c = S.chat; if (!c) return;
   const sec = $('chatSec');
@@ -605,6 +638,7 @@ function startDemo(){
   S.mesh = {node:'BB-BGI-PORT', seen:0, forwarded:0, dropped:0, transport:'single node'};
   S.tropo = null;
   S.chat = {callsign:'8P6ORC', secure_available:false, log:[]}; renderChat();
+  S.cognition = {situations:[{id:'gnss-denial',title:'GNSS denial across an area',severity:'critical',confidence:0.9,assessment:'GNSS signal is degraded on Bridgetown port and Harbour master. Several nodes at once indicates an area-wide jammer; position and timing here should be treated as untrusted.',prediction:'Likely to spread to adjacent nodes; direction-finding will localise the source.'}], forecasts:{anomaly:{risk:0.4,basis:'recent deviation 3.1\u03c3, trend rising'},propagation:{verdict:'enhanced',opening:0.72}}}; renderCognition();
   S.secure = {enabled:false, note:"Encrypts and decrypts the operator's own communications on licensed, non-amateur frequencies above the floor; it does not defeat third-party encryption."};
   renderIntel();
   S.nodes = [{id:'BB-BGI-PORT',name:'Bridgetown port'},{id:'BB-BGI-HARB',name:'Harbour master'},{id:'BB-HAST',name:'Hastings'},{id:'BB-GAIA',name:'Airport perimeter'}];
@@ -671,6 +705,18 @@ function demoCommand(m){
         const snr2=b.snr_db+fade; S.tropo.stats={availability_pct:100*(n>0?0.9:1),median_snr:+(b.snr_db-1).toFixed(1),fade_depth_db:+(6+Math.random()*6).toFixed(1),samples:n}; showTropoLive(S.tropo); },1500); }
   }
   else if (m.cmd==='tropo_stop'){ clearInterval(S._tpTimer); S.tropo=null; }
+  else if (m.cmd==='ask'){
+    const q=(m.q||'').toLowerCase(); let a='I can answer: what\'s the situation, any jamming this hour, strongest signal on 2m, show gps, open incidents, propagation.';
+    const sit=S.cognition&&S.cognition.situations&&S.cognition.situations[0];
+    if (/situation|status|happening|sitrep|summary/.test(q) && sit) a=`${sit.title} (${sit.severity}). ${sit.assessment}`;
+    else if (/jam|spoof|interfer/.test(q)) a='GNSS jamming is active on 2 nodes near Bridgetown port (demo).';
+    else if (/quiet|loud/.test(q)) a='Airport perimeter looks healthiest; Bridgetown port is most affected (demo).';
+    else if (/strongest|loudest/.test(q)) a='Strongest on 2 m: 145.270 MHz repeater, ~32 dB SNR (demo).';
+    else if (/incident|alert|threat/.test(q)) a='1 open incident: GNSS jamming cluster (critical).';
+    else if (/propagation|tropo|opening|band open/.test(q)) a='Troposcatter is enhanced right now (72%); good for an inter-island test.';
+    else if (/show|tune|go to|gps|2m|70cm/.test(q)) { a='Tuning (demo).'; }
+    setTimeout(()=>showAsk({answer:a}),250);
+  }
   else if (m.cmd==='chat_send'){
     if (m.secure){ setTimeout(()=>toast('Secure chat needs the government/defence module and a server'),100); return; }
     S.chat.log=[...(S.chat.log||[]), {ts:Date.now()/1000, from:S.chat.callsign, text:m.text, secure:false, dir:'out', status:'clear'}];

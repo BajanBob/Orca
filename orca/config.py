@@ -54,6 +54,9 @@ DEFAULTS = {
     "secure": {"enabled": False, "floor_hz": 148e6, "authority": "",
                "licensed_bands": [], "keys_hex": [], "baud": 1200},
     "agent": {"autorun_safe_steps": True, "llm": {"enabled": False, "model": "claude-sonnet-5-5"}},
+    # Cognition: on-device situation engine + Ask Orca. Set llm.enabled (and the
+    # ANTHROPIC_API_KEY env var) to add Claude reasoning on top, with on-device fallback.
+    "cognition": {"llm": {"enabled": False, "model": "claude-sonnet-5-5"}},
     "server": {"host": "0.0.0.0", "port": 8088},
 }
 
