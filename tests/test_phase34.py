@@ -388,3 +388,44 @@ def test_satcom_recommendations():
     assert "HEVC/H.265" in r["video_decode"]["support"]
     assert "never descramble" in r["boundary"] or "not descramble" in r["boundary"] or \
            "descramble it" in r["boundary"]
+
+
+def test_satcom_tx_modes_supported():
+    r = satcom.recommendations()
+    modes = r["demodulation"]["tx_modes"]
+    assert "VCM" in modes and "ACM" in modes and "T2-MI" in modes
+    assert any("Multistream" in m for m in modes)
+
+
+def test_satcom_identify_ca_names_but_never_descrambles():
+    # Every CA system the user named is identified as encrypted, identify-only.
+    for cid, name in [(0x2600, "BISS"), (0x0E00, "PowerVu"),
+                      (0x0B00, "Conax"), (0x4A60, "DigiCipher 2")]:
+        ca = satcom.identify_ca(cid)
+        assert ca["encrypted"] is True
+        assert ca["ca_system"] == name
+        assert ca["action"] == "identify-only"
+    # Free-to-air decodes; there is no 'descramble' action anywhere.
+    fta = satcom.identify_ca(None)
+    assert fta["encrypted"] is False and fta["action"] == "decode"
+    assert satcom.recommendations()["conditional_access"]["descramble"].startswith("never")
+
+
+def test_satcom_transport_profile_splits_fta_from_encrypted():
+    streams = [
+        {"isi": 1, "service": "News FTA", "ca_system_id": None},
+        {"isi": 2, "service": "Sports feed", "ca_system_id": 0x0E00},  # PowerVu
+        {"isi": 3, "service": "Movie", "ca_system_id": 0x2600},        # BISS
+    ]
+    tp = satcom.transport_profile("VCM", streams)
+    assert tp["tx_mode"] == "VCM" and tp["multistream"] is True
+    actions = {s["service"]: s["action"] for s in tp["streams"]}
+    assert actions["News FTA"] == "decode"
+    assert actions["Sports feed"] == "identify-only"
+    assert actions["Movie"] == "identify-only"
+    assert "1 free-to-air" in tp["summary"] and "2 encrypted" in tp["summary"]
+
+
+def test_satcom_t2mi_mode():
+    tp = satcom.transport_profile(t2mi=True)
+    assert tp["tx_mode"] == "T2MI" and "T2-MI" in tp["tx_mode_desc"]

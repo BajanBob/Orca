@@ -171,6 +171,91 @@ def profile(freq_hz: float, bw_hz: float) -> SatProfile | None:
                       plausible, note)
 
 
+# --- Transmission modes (how the carrier is coded) ----------------------------
+# These are physical/transport-layer modes a monitoring receiver must recognise
+# to lock and demux. Recognising and receiving them is ordinary DVB signal work.
+TX_MODES = {
+    "CCM": "Constant Coding & Modulation — one fixed MODCOD for the whole carrier.",
+    "VCM": "Variable Coding & Modulation — MODCOD varies per stream/slice; robust "
+           "streams and efficient streams share one carrier (common on feeds/DSNG).",
+    "ACM": "Adaptive Coding & Modulation — MODCOD tracks link conditions in real time "
+           "(VSAT/IP return links). Receiver must follow MODCOD per frame.",
+    "MIS": "Multiple Input Stream (multistream) — several independent transport "
+           "streams multiplexed on one carrier, separated by Input Stream Id (ISI).",
+    "T2MI": "T2-MI — a DVB-T2 Modulator Interface stream carried over satellite "
+            "(DVB-S2), feeding terrestrial transmitters; demux the T2-MI to reach "
+            "the inner TS. Orca parses the T2-MI wrapper to list the carried streams.",
+}
+
+
+# --- Conditional-access systems: IDENTIFY ONLY, never descramble ---------------
+# Public DVB CA_system_id registrations. Orca reads the CA descriptor to NAME the
+# system and flag the service as encrypted. It does not hold keys for, roll keys
+# for, or descramble any third-party CA system — including BISS, PowerVu, Conax
+# and DigiCipher. That boundary is what keeps Orca lawful to build and sell.
+CA_SYSTEMS = [
+    ("BISS",            (0x2600, 0x2600), "BISS-1/BISS-E feed scrambling (named by user)"),
+    ("PowerVu",         (0x0E00, 0x0EFF), "Cisco/Scientific-Atlanta PowerVu (named by user)"),
+    ("Conax",           (0x0B00, 0x0BFF), "Conax CAS (named by user)"),
+    ("DigiCipher 2",    (0x4A60, 0x4A63), "Motorola/GI DigiCipher II (named by user)"),
+    ("DigiCipher 2",    (0x4AD0, 0x4AD1), "Motorola/GI DigiCipher II"),
+    ("Nagravision",     (0x1800, 0x18FF), "Nagra / Media Cipher"),
+    ("Irdeto",          (0x0600, 0x06FF), "Irdeto"),
+    ("Viaccess",        (0x0500, 0x05FF), "Viaccess"),
+    ("Videoguard/NDS",  (0x0900, 0x09FF), "NDS Videoguard"),
+    ("Mediaguard/SECA", (0x0100, 0x01FF), "Mediaguard / SECA"),
+    ("Cryptoworks",     (0x0D00, 0x0DFF), "Cryptoworks"),
+]
+
+
+def identify_ca(ca_system_id: int | None) -> dict:
+    """Name the conditional-access system from its CA_system_id. Report only.
+
+    Returns the system name, whether the service is encrypted, and the fixed
+    action Orca takes. The action is always 'identify-only' for an encrypted
+    service and 'decode' for free-to-air — there is no descramble path.
+    """
+    if ca_system_id is None:
+        return {"encrypted": False, "ca_system": None, "ca_system_id": None,
+                "action": "decode", "note": "No CA descriptor: free-to-air — demux and decode."}
+    for name, (lo, hi), desc in CA_SYSTEMS:
+        if lo <= ca_system_id <= hi:
+            return {"encrypted": True, "ca_system": name,
+                    "ca_system_id": f"0x{ca_system_id:04X}", "detail": desc,
+                    "action": "identify-only",
+                    "note": f"{name}-encrypted. Orca reports it; it does not descramble "
+                            "conditional-access content."}
+    return {"encrypted": True, "ca_system": "unknown CAS",
+            "ca_system_id": f"0x{ca_system_id:04X}", "action": "identify-only",
+            "note": "Scrambled by an unrecognised CA system — identified as encrypted, not decoded."}
+
+
+def transport_profile(tx_mode: str = "CCM", streams: list[dict] | None = None,
+                      t2mi: bool = False) -> dict:
+    """Describe a carrier's transmission mode and per-stream CA status (report only).
+
+    `streams` is a list of {isi, service, ca_system_id} as read from the stream
+    headers / CA descriptors. Orca lists each stream, names any CA system, and
+    decodes only the free-to-air ones.
+    """
+    mode = "T2MI" if t2mi else (tx_mode or "CCM").upper()
+    out = {"tx_mode": mode, "tx_mode_desc": TX_MODES.get(mode, "unknown mode"),
+           "multistream": mode == "MIS" or (streams is not None and len(streams) > 1),
+           "streams": []}
+    for s in (streams or []):
+        ca = identify_ca(s.get("ca_system_id"))
+        out["streams"].append({
+            "isi": s.get("isi"), "service": s.get("service", ""),
+            "encrypted": ca["encrypted"], "ca_system": ca["ca_system"],
+            "action": ca["action"],
+        })
+    fta = [s for s in out["streams"] if not s["encrypted"]]
+    enc = [s for s in out["streams"] if s["encrypted"]]
+    out["summary"] = (f"{mode}: {len(out['streams'])} stream(s), "
+                      f"{len(fta)} free-to-air (decodable), {len(enc)} encrypted (identify-only).")
+    return out
+
+
 def recommendations() -> dict:
     """What Orca's satellite decoder should support, and how."""
     return {
@@ -179,8 +264,11 @@ def recommendations() -> dict:
             "modulations": ["QPSK", "8PSK", "16APSK", "32APSK", "64APSK", "128APSK", "256APSK"],
             "symbol_rate": "0.64-45 MSym/s",
             "rolloff": [0.35, 0.25, 0.20, 0.15, 0.10, 0.05],
+            "tx_modes": ["CCM", "VCM", "ACM", "Multistream (MIS/ISI)", "T2-MI"],
             "how": "Use an open DVB-S2/S2X demodulator (gr-dvbs2rx or leandvb under GNU Radio) "
-                   "fed from the SDR; identify MODCOD, symbol rate and roll-off automatically.",
+                   "fed from the SDR; identify MODCOD, symbol rate and roll-off automatically, "
+                   "follow per-frame MODCOD for VCM/ACM, separate multistream by Input Stream Id, "
+                   "and unwrap T2-MI to reach the inner transport stream.",
         },
         "video_decode": {
             "support": ["MPEG-2", "H.264/AVC", "HEVC/H.265"],
@@ -200,6 +288,16 @@ def recommendations() -> dict:
             "how": "An LNB/BDC block-downconverts C/Ku/Ka to the L-band IF (950-2150 MHz), which "
                    "the SDR samples — the same downconverter chain Orca already plans in bands.py.",
         },
-        "boundary": "Decode free-to-air only. Identify conditional-access (Nagra, Irdeto, "
-                    "Videoguard, BISS, etc.) but never descramble it; that keeps Orca lawful to sell.",
+        "conditional_access": {
+            "identify": ["BISS", "PowerVu", "Conax", "DigiCipher 2", "Nagravision",
+                         "Irdeto", "Viaccess", "Videoguard/NDS", "Mediaguard", "Cryptoworks"],
+            "how": "Read the CA descriptor / CA_system_id from the stream and report the system "
+                   "name and that the service is encrypted.",
+            "descramble": "never — no key store, no key 'auto-roll', no CA emulation for any "
+                          "third-party system, including BISS, PowerVu, Conax and DigiCipher.",
+        },
+        "boundary": "Decode free-to-air only. Identify conditional-access (BISS, PowerVu, Conax, "
+                    "DigiCipher, Nagra, Irdeto, Videoguard, etc.) but never descramble it. The "
+                    "secure module's encryption is for the operator's OWN comms on licensed "
+                    "non-amateur bands — it is not a CA/pay-TV descrambler.",
     }
