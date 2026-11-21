@@ -588,6 +588,42 @@ def create_app(cfg: dict) -> FastAPI:
         from . import radios
         return {"source": radios.source(), "radios": radios.all_entries()}
 
+    @app.get("/api/media")
+    async def media(freq: float):
+        from . import audio
+        return audio.media_for(freq)
+
+    @app.websocket("/ws/audio")
+    async def ws_audio(sock: WebSocket):
+        from . import audio
+        await sock.accept()
+        freq = 145.0e6
+        mode = "nfm"
+        try:
+            cfg = json.loads(await sock.receive_text())
+            freq = float(cfg.get("freq", freq))
+            mode = str(cfg.get("mode", mode)).lower()
+        except Exception:
+            pass
+        rate = audio.MODE_RATE.get(mode, audio.MODE_RATE["nfm"])
+        n = int(rate * 0.1)                      # 100 ms blocks
+        await sock.send_text(json.dumps({"type": "audio_start", "rate": audio.AUDIO_RATE,
+                                         "mode": mode, "freq": freq}))
+        try:
+            while True:
+                src = orca.src
+                if hasattr(src, "modulated_iq"):      # simulator: representative waveform
+                    iq, _, _ = src.modulated_iq(freq, rate, n)
+                else:
+                    iq = await src.capture(freq, rate, n)
+                pcm = audio.to_pcm16(audio.demodulate(iq, rate, mode))
+                await sock.send_bytes(pcm)
+                await asyncio.sleep(0.1)
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
     @app.get("/api/coverage")
     async def coverage(lo: float = 0, hi: float = 18e9):
         p = plan(lo, hi, orca.spectrum.receivers, orca.spectrum.frontends)

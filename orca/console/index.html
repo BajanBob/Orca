@@ -107,8 +107,9 @@ label input,label select{margin-top:2px}
     <span class="pill"><span class="dot" id="connDot"></span><span id="conn">Connecting</span></span>
     <span class="pill"><span class="num" id="epm">0</span>&nbsp;events/min</span>
     <span class="pill num" id="clock">--:--:-- UTC</span>
-    <button id="srvBtn" type="button">Server</button>
-    <button id="pauseBtn" type="button">Pause</button>
+    <button id="setupBtn" type="button" data-tip="First-run setup wizard: pick your radio, install drivers, choose a mode">Setup</button>
+    <button id="srvBtn" type="button" data-tip="Point this console at an Orca server (host:port) or demo mode">Server</button>
+    <button id="pauseBtn" type="button" data-tip="Freeze the live spectrum and event stream">Pause</button>
   </div>
 </header>
 
@@ -143,6 +144,22 @@ label input,label select{margin-top:2px}
       <div id="askOut" class="note" hidden></div>
       <div id="sitOut"></div>
       <div id="fcOut" class="muted"></div>
+    </section>
+    <section class="card" id="mediaCard">
+      <h2>Live monitor <small>audio &amp; video · receive only</small></h2>
+      <div id="mediaScreen" class="mediascreen"><span id="mediaVid" class="muted">No video on this band</span></div>
+      <div class="tools" style="margin-top:6px">
+        <label data-tip="Demodulation mode for the tuned signal">Mode
+          <select id="audMode" aria-label="Audio mode">
+            <option value="nfm">NFM (voice)</option><option value="wfm">WFM (broadcast)</option>
+            <option value="am">AM</option><option value="usb">USB</option>
+            <option value="lsb">LSB</option><option value="cw">CW</option>
+          </select></label>
+        <button type="button" class="pri" id="audBtn" data-tip="Listen to the tuned signal live">▶ Listen</button>
+        <span id="audVu" class="vu" aria-hidden="true"><span id="audVuBar"></span></span>
+      </div>
+      <div id="mediaNote" class="muted">Tune a band that carries audio or video, pick a mode, then Listen.</div>
+      <div id="modeHelp" class="note" hidden></div>
     </section>
     <section class="card">
       <h2>Incidents <small id="incCount"></small></h2>
@@ -217,7 +234,36 @@ label input,label select{margin-top:2px}
 <p class="muted">Enter the address of the computer running Orca, for example <b>192.168.1.20:8088</b>. Leave it empty to use this page's own server, or demo mode when there is none.</p><p class="muted" id="srvUsbNote" hidden>On this phone you can also use an RTL-SDR stick plugged in by USB (OTG): tap <b>Phone USB radio</b>. It needs the free <b>RTL-SDR driver</b> app. Receive only, 24 MHz to 1.766 GHz.</p>
 <form id="srvForm" class="tools"><input id="srvIn" placeholder="host:port" autocomplete="off" autocapitalize="off" spellcheck="false" style="flex:1 1 220px"><button class="pri" type="submit">Connect</button><button type="button" id="srvUsb" hidden>Phone USB radio</button><button type="button" id="srvDemo">Demo mode</button><button type="button" id="srvClose">Cancel</button></form></dialog>
 <dialog id="shotDlg"><h2 style="margin-top:0">Screenshot</h2><img id="shotImg" alt="Console screenshot"><p class="muted" id="shotNote"></p><form method="dialog"><button>Close</button></form></dialog>
+<dialog id="wizDlg" class="wiz">
+  <h2 style="margin-top:0">Orca setup wizard <small class="muted" id="wizStepN"></small></h2>
+  <div id="wizBody"></div>
+  <form method="dialog" class="tools" style="margin-top:12px">
+    <button type="button" id="wizBack">Back</button>
+    <span class="grow"></span>
+    <button type="button" id="wizSkip">Skip</button>
+    <button type="button" class="pri" id="wizNext">Next</button>
+  </form>
+</dialog>
 <div class="toast" id="toast" role="status"></div>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<style>
+  .mediascreen{aspect-ratio:16/9;background:#05070a;border:1px solid var(--line);border-radius:8px;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+  .mediascreen canvas,.mediascreen video{width:100%;height:100%;object-fit:cover;display:block}
+  .vu{display:inline-block;width:60px;height:10px;background:var(--line);border-radius:5px;overflow:hidden;align-self:center}
+  .vu>span{display:block;height:100%;width:0;background:linear-gradient(90deg,#3bd,#6e6);transition:width .08s}
+  .tip{position:fixed;z-index:9999;max-width:280px;background:#0b1016;color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.35;box-shadow:0 6px 20px rgba(0,0,0,.5);pointer-events:none}
+  .wiz{max-width:560px;width:92vw;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink)}
+  .wiz .opt{display:block;width:100%;text-align:left;padding:10px 12px;margin:4px 0;border:1px solid var(--line);
+    border-radius:8px;background:var(--bg);color:var(--ink);cursor:pointer}
+  .wiz .opt.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+  .wiz .steps{display:flex;gap:4px;margin-bottom:10px}
+  .wiz .steps i{flex:1;height:4px;border-radius:2px;background:var(--line)}
+  .wiz .steps i.on{background:var(--acc)}
+  .wiz code{background:#05070a;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .pnp{color:#6e6}.needs{color:#fc6}
+</style>
 
 <script>
 {
@@ -786,6 +832,161 @@ function demoCommand(m){
 
 markRail(); drawAxis(); renderInc(); renderReadout();
 connect();
+
+/* ================= hover help, live monitor, setup wizard ================= */
+const MODE_HELP = {
+  nfm:"<b>Narrowband FM</b> — 2 m/70 cm, marine, PMR, business. Tune to the channel centre (12.5/25 kHz steps). On the IC-9100 or FTM-510 select FM. Squelch opens on carrier.",
+  wfm:"<b>Broadcast FM</b> — 87.5–108 MHz, mono, ~180 kHz wide. Best with the HackRF; most transceivers can't demodulate WFM.",
+  am:"<b>AM</b> — airband 118–137 MHz, AM broadcast 530–1710 kHz, HF utility. Tune to the carrier.",
+  usb:"<b>USB (upper sideband)</b> — HF voice/data above 10 MHz and on 60/17/15/12/10 m. Tune within ±100 Hz for natural pitch. IC-9100: USB or USB-D for data.",
+  lsb:"<b>LSB (lower sideband)</b> — HF voice on 160/80/40 m. Same tuning feel as USB, opposite sideband.",
+  cw:"<b>CW (Morse)</b> — narrow filter; you hear the 600 Hz tone Orca injects. Tune for the pitch you like."
+};
+
+/* ---- hover help: tooltip for any [data-tip] ---- */
+(function(){
+  const tip = $('tip'); let el=null;
+  const show = t => { const r=el.getBoundingClientRect(); tip.innerHTML=t; tip.hidden=false;
+    let x=r.left, y=r.bottom+8; const w=Math.min(280, innerWidth-16);
+    if (x+w>innerWidth-8) x=innerWidth-w-8; tip.style.left=Math.max(8,x)+'px'; tip.style.top=y+'px'; };
+  const over = e => { const t=e.target.closest('[data-tip]'); if (!t) return; el=t; show(t.getAttribute('data-tip')); };
+  const out = () => { tip.hidden=true; el=null; };
+  document.addEventListener('mouseover', over); document.addEventListener('mouseout', out);
+  document.addEventListener('focusin', over); document.addEventListener('focusout', out);
+  addEventListener('scroll', out, true);
+})();
+
+/* ---- live monitor: audio demod playback + video/FTA screen ---- */
+const Monitor = (function(){
+  let ctx=null, ws=null, playing=false, nextAt=0, rate=48000, lastFreq=0, anim=0;
+  const center = () => (S.view.lo + S.view.hi)/2;
+
+  async function updateCap(){
+    const f = center(); if (Math.abs(f-lastFreq) < 1) return; lastFreq = f;
+    let cap = localCap(f);
+    if (BASE){ try { const r = await fetch(BASE+'/api/media?freq='+f); if (r.ok) cap = await r.json(); } catch {} }
+    const vid = $('mediaVid');
+    if (cap.video){ vid.textContent = '📡 ' + (cap.note || 'Satellite TV band') + ' — free-to-air video decodes with the DVB-S2 pipeline; conditional-access is identified, not descrambled.'; }
+    else if (cap.audio){ vid.textContent = ''; }
+    else { vid.textContent = 'No audio or video on this band'; }
+    if (cap.modes && cap.modes.length){ $('audMode').value = cap.modes[0]; showModeHelp(); }
+    $('mediaNote').textContent = cap.audio ? (cap.note||'Audio available') + ' — pick a mode and Listen.'
+      : cap.video ? 'Video band: free-to-air decode only.' : 'This band carries no audio/video.';
+  }
+  function localCap(f){ // used before a server answers
+    if ((f>=3.4e9&&f<=4.2e9)||(f>=10.7e9&&f<=12.75e9)||(f>=17.7e9&&f<=21.2e9)) return {audio:false,video:true,modes:[],note:'Satellite TV band'};
+    if (f>=87.5e6&&f<=108e6) return {audio:true,video:false,modes:['wfm'],note:'FM broadcast'};
+    if (f>=118e6&&f<137e6) return {audio:true,video:false,modes:['am'],note:'Airband AM'};
+    if (f<30e6) return {audio:true,video:false,modes:['usb','lsb','am','cw'],note:'HF'};
+    if (f<1e9) return {audio:true,video:false,modes:['nfm'],note:'VHF/UHF FM'};
+    return {audio:false,video:false,modes:[]};
+  }
+  function showModeHelp(){ const h=MODE_HELP[$('audMode').value]; const b=$('modeHelp'); b.innerHTML=h||''; b.hidden=!h; }
+
+  function vu(v){ $('audVuBar').style.width = Math.min(100, v*140)+'%'; }
+  function drawScreen(level){ // simple audio visual on the screen when no video
+    const scr=$('mediaScreen'); let c=scr.querySelector('canvas');
+    if ($('mediaVid').textContent){ if(c) c.remove(); return; }
+    if (!c){ c=document.createElement('canvas'); c.width=320; c.height=180; scr.appendChild(c); }
+    const g=c.getContext('2d'); g.fillStyle='#05070a'; g.fillRect(0,0,320,180);
+    g.fillStyle='#3bd'; const n=32; for(let i=0;i<n;i++){ const h=4+Math.random()*level*170; g.fillRect(i*10+2, 180-h, 8, h); }
+  }
+
+  function stop(){ playing=false; try{ws&&ws.close()}catch{}; ws=null; cancelAnimationFrame(anim);
+    $('audBtn').textContent='▶ Listen'; vu(0); const c=$('mediaScreen').querySelector('canvas'); if(c) c.remove(); }
+
+  function playChunk(f32){ // schedule gapless
+    if (!ctx) return; const buf=ctx.createBuffer(1, f32.length, rate); buf.copyToChannel(f32,0);
+    const s=ctx.createBufferSource(); s.buffer=buf; s.connect(ctx.destination);
+    const t=Math.max(ctx.currentTime, nextAt); s.start(t); nextAt=t+buf.duration;
+    let sum=0; for(let i=0;i<f32.length;i+=50) sum+=f32[i]*f32[i]; vu(Math.sqrt(sum/(f32.length/50)));
+  }
+
+  function start(){
+    ctx = ctx || new (window.AudioContext||window.webkitAudioContext)(); ctx.resume(); nextAt=ctx.currentTime+0.15;
+    playing=true; $('audBtn').textContent='⏸ Stop';
+    const mode=$('audMode').value, freq=center();
+    const loop=()=>{ if(playing){ drawScreen(0.3); anim=requestAnimationFrame(loop); } }; loop();
+    if (BASE && S.live){
+      try { ws = new WebSocket(BASE.replace(/^http/,'ws')+'/ws/audio'); } catch { return demoTone(mode); }
+      ws.binaryType='arraybuffer';
+      ws.onopen = () => ws.send(JSON.stringify({freq, mode}));
+      ws.onmessage = m => { if (typeof m.data==='string'){ try{rate=JSON.parse(m.data).rate||48000}catch{} return; }
+        const i16=new Int16Array(m.data); const f=new Float32Array(i16.length); for(let i=0;i<i16.length;i++) f[i]=i16[i]/32768; playChunk(f); };
+      ws.onclose = () => { if (playing) stop(); };
+      ws.onerror = () => demoTone(mode);
+      $('mediaNote').textContent = `Live audio from ${fmtF(freq)} · ${mode.toUpperCase()}`;
+    } else demoTone(mode);
+  }
+  function demoTone(mode){ // honest local placeholder when no server/SDR
+    $('mediaNote').textContent = 'Demo tone (no server/SDR) — live audio needs a connected Orca radio.';
+    const osc=ctx.createOscillator(), g=ctx.createGain();
+    osc.type = mode==='cw'?'sine':'triangle'; osc.frequency.value = mode==='cw'?600:440;
+    g.gain.value=0.04; osc.connect(g).connect(ctx.destination); osc.start();
+    ws={close:()=>{try{osc.stop()}catch{}}}; const vuLoop=()=>{ if(playing){ vu(0.3+Math.random()*0.2); setTimeout(vuLoop,120); } }; vuLoop();
+  }
+
+  $('audBtn').onclick = () => playing ? stop() : start();
+  $('audMode').onchange = () => { showModeHelp(); if (playing){ stop(); start(); } };
+  setInterval(updateCap, 1500); showModeHelp();
+  return { updateCap };
+})();
+
+/* ---- setup wizard ---- */
+const Wizard = (function(){
+  let step=0, radios=[], pick=null, mode='nfm';
+  const steps = ['Welcome','Radio','Drivers','Connection','Mode','Done'];
+  const bar = () => `<div class="steps">${steps.map((_,i)=>`<i class="${i<=step?'on':''}"></i>`).join('')}</div>`;
+
+  async function load(){ if (radios.length || !BASE) return;
+    try { const r=await fetch(BASE+'/api/radios'); if (r.ok){ radios=(await r.json()).radios||[]; } } catch {} }
+
+  function render(){
+    $('wizStepN').textContent = `step ${step+1} of ${steps.length} · ${steps[step]}`;
+    const b=$('wizBody'); let h=bar();
+    if (step===0){ h+=`<p>This wizard gets a radio receiving in four steps: pick it, install any driver, connect it, choose a mode. You can skip any step and change it later.</p>
+      <p class="muted">Orca is receive-only here; nothing transmits without your callsign and licence settings.</p>`; }
+    else if (step===1){
+      if (!radios.length) h+=`<p class="muted">Connect to an Orca server (Server button) to load the full catalog. You can still choose a mode now.</p>`;
+      else { h+=`<p>Pick your radio (${radios.length} supported, shared with Tradewind Commander):</p>`;
+        h+=`<div style="max-height:300px;overflow:auto">`+radios.map(r=>`<button type="button" class="opt ${pick&&pick.id===r.id?'on':''}" data-id="${r.id}">
+          <b>${esc(r.label)}</b><br><small class="muted">${esc(r.subsystem)} · ${r.plug_and_play?'<span class=pnp>plug-and-play</span>':'<span class=needs>driver step</span>'}</small></button>`).join('')+`</div>`; }
+    }
+    else if (step===2){
+      if (!pick){ h+=`<p class="muted">No radio selected — nothing to install. Audio interfaces like the SignaLink need no driver.</p>`; }
+      else { h+=`<p>Drivers for <b>${esc(pick.label)}</b>:</p>`;
+        h+=pick.driver.drivers.map(d=>`<p>• <b>${esc(d.interface)}</b> — ${esc(d.detail)}</p>`).join('');
+        h+=`<p class="muted">On Windows, run <code>orca --setup-drivers</code> to bind WinUSB to SDR dongles automatically (libwdi/Zadig). CAT bridges arrive via Windows Update; USB-audio interfaces need nothing.</p>`; }
+    }
+    else if (step===3){
+      const bind = pick ? pick.bind : null;
+      h+=`<p>Connect <b>${esc(pick?pick.label:'your radio')}</b>:</p>`;
+      if (bind==='sdr') h+=`<p>Plug in the SDR. Orca tunes it directly. Run <code>orca --devices</code> to confirm it's seen.</p>`;
+      else if (bind==='uranus') h+=`<p>Point WSJT-X / Uranus at the radio's USB audio and UDP <code>2237</code>; set CI-V/CAT on its COM port. Orca ingests the decodes.</p>`;
+      else if (bind==='aprs') h+=`<p>Run Direwolf on the radio's data cable (KISS socket <code>127.0.0.1:8001</code>) for the 2 m/70 cm mesh and APRS.</p>`;
+      else h+=`<p class="muted">Pick a radio in step 2 for exact wiring, or see docs/USB_RADIOS.md.</p>`;
+      if (pick&&pick.note) h+=`<p class="muted">${esc(pick.note)}</p>`;
+    }
+    else if (step===4){
+      h+=`<p>Choose a listening mode:</p><div class="tools"><select id="wizMode">${Object.keys(MODE_HELP).map(m=>`<option value="${m}" ${m===mode?'selected':''}>${m.toUpperCase()}</option>`).join('')}</select></div>`;
+      h+=`<div class="note" id="wizModeHelp">${MODE_HELP[mode]}</div>`;
+    }
+    else { h+=`<p><b>Ready.</b> ${pick?esc(pick.label):'Your setup'} is configured. Tune a band and use the Live monitor to listen.</p>
+      <p class="muted">Re-open this wizard any time with Setup. Full wiring: docs/USB_RADIOS.md.</p>`; }
+    b.innerHTML=h;
+    if (step===1) b.querySelectorAll('.opt').forEach(btn=>btn.onclick=()=>{ pick=radios.find(r=>r.id===btn.dataset.id); render(); });
+    if (step===4){ const sel=$('wizMode'); sel.onchange=()=>{ mode=sel.value; $('wizModeHelp').innerHTML=MODE_HELP[mode]; }; }
+    $('wizBack').disabled = step===0; $('wizNext').textContent = step>=steps.length-1 ? 'Finish' : 'Next';
+  }
+  async function open(){ step=0; await load(); render(); $('wizDlg').showModal(); }
+  $('setupBtn').onclick = open;
+  $('wizNext').onclick = () => { if (step>=steps.length-1){ if (mode){ $('audMode').value=mode; Monitor.updateCap(); } $('wizDlg').close(); toast('Setup saved'); return; } step++; render(); };
+  $('wizBack').onclick = () => { if (step>0){ step--; render(); } };
+  $('wizSkip').onclick = () => { if (step<steps.length-1){ step++; render(); } else $('wizDlg').close(); };
+  // first-run: open once automatically
+  try { if (!store.get('orca.seen')){ store.set('orca.seen','1'); setTimeout(open, 800); } } catch {}
+  return { open };
+})();
 }
 </script>
 </body>
