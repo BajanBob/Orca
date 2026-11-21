@@ -1,0 +1,46 @@
+# Orca site configuration for REAL SDR hardware (SoapySDR, receive only).
+# Copy to site.yaml and edit for your receivers. Run sdr-setup.sh first to
+# install SoapySDR and the driver for your device.
+site:
+  name: Orca field node
+  node: ORCA-SDR-01
+  region: itu2                 # itu1 | itu2 | itu3
+  lat: 13.103
+  lon: -59.630
+
+data_dir: ./data
+
+# Receive-only SDR through SoapySDR. Set args for your device:
+#   RTL-SDR:  driver=rtlsdr
+#   Airspy:   driver=airspy
+#   HackRF:   driver=hackrf
+#   USRP:     driver=uhd
+#   RX888:    driver=rx888
+sdr:
+  kind: soapy
+  args: "driver=rtlsdr"
+  gain: 30                      # omit for automatic gain
+  max_rate: 2.4e6               # set to your device's usable sample rate
+
+# Receivers and downconverters you own, for DC-to-Ku coverage planning.
+inventory:
+  receivers: [rtlsdr]           # e.g. [soundcard, rx888, hackrf]
+  frontends: []                 # e.g. [c_bdc, x_bdc, ku_lnb_low, ku_bdc]
+
+view: {lo: 144.0e6, hi: 146.0e6}
+
+# Real GNSS receivers (Skylark2040) via gpsd or NMEA serial:
+nodes:
+  - {id: ORCA-SDR-01, name: Orca field node, lat: 13.103, lon: -59.630, tool: Skylark2040,
+     gnss: {kind: gpsd, host: 127.0.0.1, port: 2947}}
+  # - {id: ..., gnss: {kind: nmea, device: /dev/ttyACM0, baud: 9600}}
+
+aprs:    {mode: kiss, host: 127.0.0.1, port: 8001, callsign: "", transmit: false}
+uranus:  {mode: udp, port: 2237}        # point WSJT-X here
+syslog:  {mode: udp, port: 5514}
+
+protected_extra: []
+anomaly_z: 6.0
+mesh: {peers: []}
+secure: {enabled: false, floor_hz: 148.0e6, authority: "", licensed_bands: [], keys_hex: [], baud: 1200}
+server: {host: 0.0.0.0, port: 8088}

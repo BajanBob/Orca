@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 config/site.yaml
 *.sigmf-data
+/build/
+/dist/
+*.spec

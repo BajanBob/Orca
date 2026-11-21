@@ -61,6 +61,53 @@ jobs:
           name: windows
           path: out/*
 
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Test
+        run: python -m pytest -q
+      - name: Build Orca server (single binary)
+        run: >
+          pyinstaller --noconfirm --clean --onefile --name orca-server --paths .
+          --add-data "orca/console:orca/console" --add-data "config:config"
+          --collect-submodules uvicorn --collect-submodules websockets
+          --collect-submodules orca packaging/orca_server.py
+      - name: Smoke test the Linux binary
+        run: |
+          ./dist/orca-server --port 8099 &
+          PID=$!
+          ok=0
+          for i in $(seq 1 30); do
+            sleep 2
+            if curl -sf http://127.0.0.1:8099/api/state | grep -q '"type":"hello"'; then ok=1; break; fi
+          done
+          kill $PID || true
+          [ $ok -eq 1 ] || { echo "orca-server did not answer"; exit 1; }
+          echo "orca-server answered /api/state"
+      - name: Package Linux build
+        run: |
+          mkdir -p out linux
+          cp dist/orca-server packaging/orca-linux.sh config/site.example.yaml README.md linux/
+          chmod +x linux/orca-server linux/orca-linux.sh
+          (cd linux && zip -q ../out/Orca-Linux-x64.zip *)
+      - name: Package SDR Edition (source + SoapySDR setup for real radios)
+        run: |
+          mkdir -p sdredition/Orca-SDR-Edition
+          cp -r orca android packaging config requirements.txt README.md sdredition/Orca-SDR-Edition/
+          chmod +x sdredition/Orca-SDR-Edition/packaging/sdr-setup.sh
+          (cd sdredition && zip -qr ../out/Orca-SDR-Edition.zip Orca-SDR-Edition \
+            -x '*/__pycache__/*' '*/console/*.map')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: out/*
+
   android:
     runs-on: ubuntu-latest
     steps:
@@ -85,7 +132,7 @@ jobs:
           path: out/*
 
   release:
-    needs: [windows, android]
+    needs: [windows, linux, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,6 +157,8 @@ jobs:
 
           - Orca-Desktop-Windows-x64.zip: unzip and run OrcaDesktop.exe (Windows 10/11, uses the WebView2 runtime). Starts in simulator mode; edit %LOCALAPPDATA%\\Orca\\site.yaml for real hardware.
           - Orca-Server-Windows-x64.zip: orca-server.exe plus site.yaml. Run it, then open http://<pc-ip>:8088 from any tablet or phone.
+          - Orca-Linux-x64.zip: a single orca-server binary plus orca-linux.sh. Run ./orca-linux.sh (or ./orca-server --config site.yaml). Built on Ubuntu; works on recent x86-64 Linux.
+          - Orca-SDR-Edition.zip: source plus packaging/sdr-setup.sh, which installs SoapySDR and drivers for real receivers (RTL-SDR, Airspy, HackRF, USRP, RX888). Use config/site.sdr.yaml. For Linux, Raspberry Pi and any machine with a supported SDR.
           - Orca-Android-APK.zip: the touch console for Android 7+. Tap Server to connect to your Orca PC; demo mode without one. Debug-signed: allow installs from this source.
 
           The executables are not code-signed yet, so Windows SmartScreen may warn on first run."
