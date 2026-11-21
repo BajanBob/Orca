@@ -23,13 +23,13 @@ jobs:
         run: python -m pytest -q
       - name: Build Orca server (single .exe)
         run: >
-          pyinstaller --noconfirm --clean --paths . --onefile --console --name orca-server
+          pyinstaller --noconfirm --clean --noupx --paths . --onefile --console --name orca-server
           --add-data "orca/console;orca/console" --add-data "config;config"
           --collect-submodules uvicorn --collect-submodules websockets
           --collect-submodules orca packaging/orca_server.py
       - name: Build Orca Desktop (windowed app)
         run: >
-          pyinstaller --noconfirm --clean --paths . --onedir --windowed --name OrcaDesktop
+          pyinstaller --noconfirm --clean --noupx --paths . --onedir --windowed --name OrcaDesktop
           --add-data "orca/console;orca/console" --add-data "config;config"
           --collect-submodules uvicorn --collect-submodules websockets
           --collect-submodules orca --collect-all webview packaging/orca_desktop.py

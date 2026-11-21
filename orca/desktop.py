@@ -1,13 +1,4 @@
-import os, sys
-from pathlib import Path
-
-# Windowed build has no console: give Python somewhere to write
-if sys.stdout is None or sys.stderr is None:
-    log_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Orca"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log = open(log_dir / "orca-desktop.log", "a", buffering=1, encoding="utf-8")
-    sys.stdout = sys.stdout or log
-    sys.stderr = sys.stderr or log"""Orca Desktop: runs the Orca server and opens the console in its own window.
+"""Orca Desktop: runs the Orca server and opens the console in its own window.
 
 Used for the Windows desktop build. On first run it writes an editable
 site.yaml (simulator by default) next to the app's data folder.
@@ -61,12 +52,27 @@ def free_port(preferred: int) -> int:
     raise RuntimeError("no free port")
 
 
+def ensure_streams() -> None:
+    """A windowed (no-console) build has sys.stdout/sys.stderr set to None.
+    Libraries such as uvicorn call .isatty() on them and crash, so send that
+    output to a log file in the app's data folder instead."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    log = open(home_dir() / "orca-desktop.log", "a", buffering=1, encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = log
+    if sys.stderr is None:
+        sys.stderr = log
+
+
 def main():
+    ensure_streams()
     cfg_path = site_config()
     cfg = config.load(cfg_path)
     host = os.environ.get("ORCA_HOST", "127.0.0.1")   # set 0.0.0.0 to share with tablets/phones
     port = free_port(int(os.environ.get("ORCA_PORT", cfg["server"]["port"])))
-    server = uvicorn.Server(uvicorn.Config(create_app(cfg), host=host, port=port, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(create_app(cfg), host=host, port=port,
+                                          log_level="warning", log_config=None))
     t = threading.Thread(target=server.run, daemon=True)
     t.start()
     url = f"http://127.0.0.1:{port}/"
