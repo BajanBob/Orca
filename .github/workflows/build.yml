@@ -13,8 +13,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install
@@ -56,7 +56,7 @@ jobs:
           Copy-Item dist/orca-server.exe, README.md srv/
           Copy-Item config/site.example.yaml srv/site.yaml
           Compress-Archive -Path srv/* -DestinationPath out/Orca-Server-Windows-x64.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: out/*
@@ -64,8 +64,8 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install
@@ -116,7 +116,7 @@ jobs:
           mkdir -p esp/Orca-ESP32-Firmware
           cp -r esp32/* esp/Orca-ESP32-Firmware/
           (cd esp && zip -qr ../out/Orca-ESP32-Firmware.zip Orca-ESP32-Firmware)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: out/*
@@ -124,12 +124,12 @@ jobs:
   android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.9"
       - name: Build APK
@@ -140,7 +140,7 @@ jobs:
           VER="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' orca/__init__.py)"
           cp android/app/build/outputs/apk/debug/app-debug.apk "out/Orca-Console-$VER.apk"
           (cd out && zip -q Orca-Android-APK.zip "Orca-Console-$VER.apk" && rm "Orca-Console-$VER.apk")
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android
           path: out/*
@@ -149,8 +149,8 @@ jobs:
     needs: [windows, linux, android]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
