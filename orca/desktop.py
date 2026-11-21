@@ -1,4 +1,13 @@
-"""Orca Desktop: runs the Orca server and opens the console in its own window.
+import os, sys
+from pathlib import Path
+
+# Windowed build has no console: give Python somewhere to write
+if sys.stdout is None or sys.stderr is None:
+    log_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Orca"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log = open(log_dir / "orca-desktop.log", "a", buffering=1, encoding="utf-8")
+    sys.stdout = sys.stdout or log
+    sys.stderr = sys.stderr or log"""Orca Desktop: runs the Orca server and opens the console in its own window.
 
 Used for the Windows desktop build. On first run it writes an editable
 site.yaml (simulator by default) next to the app's data folder.
