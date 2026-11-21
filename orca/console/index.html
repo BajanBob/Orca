@@ -214,8 +214,8 @@ label input,label select{margin-top:2px}
 </main>
 
 <dialog id="srvDlg"><h2 style="margin-top:0">Connect to an Orca server</h2>
-<p class="muted">Enter the address of the computer running Orca, for example <b>192.168.1.20:8088</b>. Leave it empty to use this page's own server, or demo mode when there is none.</p>
-<form id="srvForm" class="tools"><input id="srvIn" placeholder="host:port" autocomplete="off" autocapitalize="off" spellcheck="false" style="flex:1 1 220px"><button class="pri" type="submit">Connect</button><button type="button" id="srvDemo">Demo mode</button><button type="button" id="srvClose">Cancel</button></form></dialog>
+<p class="muted">Enter the address of the computer running Orca, for example <b>192.168.1.20:8088</b>. Leave it empty to use this page's own server, or demo mode when there is none.</p><p class="muted" id="srvUsbNote" hidden>On this phone you can also use an RTL-SDR stick plugged in by USB (OTG): tap <b>Phone USB radio</b>. It needs the free <b>RTL-SDR driver</b> app. Receive only, 24 MHz to 1.766 GHz.</p>
+<form id="srvForm" class="tools"><input id="srvIn" placeholder="host:port" autocomplete="off" autocapitalize="off" spellcheck="false" style="flex:1 1 220px"><button class="pri" type="submit">Connect</button><button type="button" id="srvUsb" hidden>Phone USB radio</button><button type="button" id="srvDemo">Demo mode</button><button type="button" id="srvClose">Cancel</button></form></dialog>
 <dialog id="shotDlg"><h2 style="margin-top:0">Screenshot</h2><img id="shotImg" alt="Console screenshot"><p class="muted" id="shotNote"></p><form method="dialog"><button>Close</button></form></dialog>
 <div class="toast" id="toast" role="status"></div>
 
@@ -245,8 +245,11 @@ const BASE = SRV ? (/^https?:\/\//.test(SRV) ? SRV : 'http://' + SRV).replace(/\
   : (location.protocol === 'http:' || location.protocol === 'https:') && location.host ? location.origin : '';
 $('srvBtn').onclick = () => { $('srvIn').value = store.get('orca.server'); $('srvDlg').showModal(); };
 $('srvClose').onclick = () => $('srvDlg').close();
-$('srvForm').addEventListener('submit', e => { e.preventDefault(); store.set('orca.server', $('srvIn').value.trim()); location.reload(); });
-$('srvDemo').onclick = () => { store.set('orca.server', ''); store.set('orca.demo', '1'); location.reload(); };
+$('srvForm').addEventListener('submit', e => { e.preventDefault(); store.set('orca.server', $('srvIn').value.trim()); store.set('orca.usb', ''); location.reload(); });
+$('srvDemo').onclick = () => { store.set('orca.server', ''); store.set('orca.usb', ''); store.set('orca.demo', '1'); location.reload(); };
+const ANDROID = window.OrcaAndroid && typeof window.OrcaAndroid.hasUsb === 'function' ? window.OrcaAndroid : null;
+if (ANDROID){ $('srvUsb').hidden = false; $('srvUsbNote').hidden = false; }
+$('srvUsb').onclick = () => { store.set('orca.server', ''); store.set('orca.usb', '1'); location.reload(); };
 
 /* ---------- rail ---------- */
 $('rail').innerHTML = BANDS.map(b => `<button type="button" data-lo="${b[2]}" data-hi="${b[3]}"><span>${b[1]}</span><small>${fmtS(b[2])} – ${fmtS(b[3])}</small></button>`).join('')
@@ -264,6 +267,7 @@ function setView(lo, hi){
   clearTimeout(viewTimer); viewTimer = setTimeout(() => send({cmd:'view', lo, hi}), 120);
 }
 function connect(){
+  if (!BASE && ANDROID && store.get('orca.usb') === '1') return startUsb();
   if (!BASE) return startDemo();
   let ws; try { ws = new WebSocket(BASE.replace(/^http/, 'ws') + '/ws'); } catch { return startDemo(); }
   const fail = setTimeout(() => { try{ws.close()}catch{}; startDemo(); }, 2500);
@@ -646,10 +650,11 @@ function startDemo(){
   renderHealth(); renderCaps();
   setChain({chains:[{receiver:'Orca simulator', frontend:'Direct', rf_lo:0, rf_hi:20e9}], gaps:[], steps:1});
   demoAudit('Orca', 'demo started: connect to an Orca server for live sensors');
-  setInterval(() => { if (!S.paused) onFrame(demoFrame()); }, 110);
+  setInterval(() => { if (!S.paused && !demo.usb) onFrame(demoFrame()); }, 110);
   const calls = ['CQ K1ABC FN42','CQ EA8TL IL18','8P6KM W4XYZ EM73','CQ PY2ZZ GG66','CQ ZS6AA KG33'];
   let k = 0;
   setInterval(() => {
+    if (demo.usb) return;
     k++;
     const jam = S.scenarios.includes('gnss_jam');
     for (const nd of S.nodes){ const hit = jam && nd.id !== 'BB-GAIA' && nd.id !== 'BB-HAST'; const c = hit ? 22+Math.random()*4 : 43+Math.random()*3;
@@ -661,6 +666,50 @@ function startDemo(){
     if (jam && k===14){ demoEvent('net.syslog','net.auth.fail','medium','BB-BGI-PORT',{line:'vpn: authentication failure for user svc-port from 203.0.113.7'}); escalate(); }
   }, 1200);
 }
+
+/* ---------- phone USB radio (Android app + RTL-SDR driver) ---------- */
+function findEmissions(db, lo, bw, fl){
+  const out = []; let a = -1;
+  for (let i=0;i<=db.length;i++){ const up = i<db.length && db[i] > fl+8;
+    if (up && a<0) a=i;
+    if (!up && a>=0){ let pk=a, s=0, sf=0; for (let j=a;j<i;j++){ if (db[j]>db[pk]) pk=j; const l=10**(db[j]/10)-10**(fl/10); s+=l; sf+=l*(lo+(j+.5)*bw); }
+      const m3 = db.slice(a,i).filter(v => v >= db[pk]-3).length;
+      out.push({f_center:s>0?sf/s:lo+(pk+.5)*bw, f_lo:lo+a*bw, f_hi:lo+i*bw, bw_occ:Math.max(1,(i-a))*bw*.99, bw_3db:m3*bw, peak_db:db[pk], snr_db:db[pk]-fl}); a=-1; } }
+  return out.slice(0, 60);
+}
+function startUsb(){
+  startDemo(); demo.usb = true;
+  S.sim = false; S.scenarios = []; renderScen();
+  S.inc = new Map(); S.sel = null; S.events = []; S.audit = []; renderInc(); renderStream(); renderAudit();
+  if (S.cognition) { S.cognition.situations = []; renderCognition(); }
+  S.nodes = [{id:'PHONE', name:'This phone'}];
+  S.health = {adapters:{'rtl-sdr (USB on this phone)':'starting'}}; renderHealth();
+  $('conn').textContent = 'USB radio (starting)'; $('connDot').className = 'dot warn';
+  $('site').textContent = 'RTL-SDR on this phone · receive only';
+  setChain({chains:[{receiver:'RTL-SDR on this phone', frontend:'USB', rf_lo:24e6, rf_hi:1766e6}], gaps:[], steps:1});
+  demoAudit('Operator', 'phone USB radio selected (RTL-SDR, 24 MHz – 1.766 GHz, receive only)');
+  if (S.view.lo < 24e6 || S.view.hi > 1766e6 || S.view.hi - S.view.lo > 200e6) setView(1088e6, 1092e6);
+  ANDROID.startUsb();
+}
+window.orcaUsbReady = () => { if (demo && demo.usb) ANDROID.setView(S.view.lo, S.view.hi); };
+window.orcaUsbStatus = (state, text) => {
+  if (!demo || !demo.usb) return;
+  const live = state === 'live';
+  $('conn').textContent = live ? 'USB radio' : 'USB radio (' + state + ')';
+  $('connDot').className = live ? 'dot' : 'dot warn';
+  S.health = {...S.health, adapters:{'rtl-sdr (USB on this phone)': live ? 'online' : text}}; renderHealth();
+  if (state !== 'connecting') { demoAudit('Orca', text); toast(text); }
+};
+window.orcaUsbFrame = (lo, hi, raw, rbw, single) => {
+  if (!demo || !demo.usb || S.paused) return;
+  const n = raw.length, bw = (hi-lo)/n;
+  const measured = raw.filter(v => v > -139).sort((x,y) => x-y);
+  if (!measured.length) return;
+  const fl = measured[Math.floor(measured.length/2)];
+  const db = raw.map(v => v > -139 ? v : fl - 20);
+  demo.n++;
+  onFrame({type:'frame', lo, hi, db, floor:fl, emissions:findEmissions(db, lo, bw, fl), mode: single ? 'iq' : 'sweep', rbw, ts:Date.now()/1000, baseline_n:Math.min(999, demo.n), z:null});
+};
 function demoIncident(){
   const steps = [['Focus spectrum on GPS L1 and record 2 s of IQ as evidence','capture_iq',false,{freq:1575.42e6,span:20e6}],['Task nearby nodes to take bearings (direction-finding)','task_df',false,{freq:1575.42e6}],
     ['Send APRS bulletin warning the local EmComm net','aprs_bulletin',true,{}],['Write incident report for the spectrum regulator','report',true,{}]].map((s,i)=>({id:i,text:s[0],action:s[1],gate:s[2],args:s[3],state:'pending',result:''}));
@@ -684,6 +733,7 @@ function demoRun(inc, s, actor, skip){
 }
 function demoCommand(m){
   if (!demo) return;
+  if (demo.usb){ if (m.cmd==='view') ANDROID.setView(m.lo, m.hi); else if (m.cmd!=='scenario') toast('Not available with the phone USB radio. Connect to an Orca server for this.'); return; }
   if (m.cmd==='approve'||m.cmd==='skip'){ const i=S.inc.get(m.incident); demoRun(i, i.steps.find(s=>s.id===m.step), 'Operator', m.cmd==='skip'); renderInc(); }
   else if (m.cmd==='close'){ const i=S.inc.get(m.incident); i.status='closed'; demoAudit('Operator', `closed ${i.id}`); renderInc(); }
   else if (m.cmd==='capture_iq'){ const name=`orca_demo_${(m.freq/1e6).toFixed(3)}MHz.sigmf-data`; S.caps.unshift({name, bytes:Math.round(Math.min(m.span*1.25*m.seconds, 4194304)*8)}); renderCaps(); demoAudit('Operator', `IQ capture ${name}`); setTimeout(()=>toast(`Saved ${name} (demo)`), 600); }

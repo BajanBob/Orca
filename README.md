@@ -12,7 +12,17 @@ Ready-built apps are attached to each [release](https://github.com/BajanBob/orca
 |---|---|
 | `Orca-Desktop-Windows-x64.zip` | Windows 10/11 desktop app. Unzip and run `OrcaDesktop.exe`; the console opens in its own window. Settings live in `%LOCALAPPDATA%\Orca\site.yaml`. |
 | `Orca-Server-Windows-x64.zip` | `orca-server.exe`: a headless server for a control-room PC. Open `http://<pc-ip>:8088` from any tablet, phone or wall screen. |
-| `Orca-Android-APK.zip` | Android 7+ touch console. Tap **Server** to connect to your Orca PC; it runs in demo mode without one. |
+| `Orca-Android-APK.zip` | Android 7+ touch console. Tap **Server** to connect to your Orca PC, or **Phone USB radio** to use an RTL-SDR stick plugged into the phone (see below); it runs in demo mode without either. |
+
+### RTL-SDR stick on an Android phone
+
+The Android app can use an RTL-SDR stick (RTL2832U + R820T/R820T2, for example an RTL-SDR Blog V3/V4 or FlightAware Pro Stick) plugged straight into the phone, with no PC:
+
+1. Install the free **RTL-SDR driver** app (Martin Marinov, package `marto.rtl_tcp_andro`) from Google Play.
+2. Plug the stick in with a USB-C/OTG adapter.
+3. In Orca, tap **Server** → **Phone USB radio** and allow USB access when Android asks.
+
+It is receive only and covers 24 MHz to 1.766 GHz. Narrow views (under about 1.6 MHz) update ten times a second; wider views are swept in 1.6 MHz steps, so a 100 MHz view refreshes about every 6 seconds. Recording IQ, incidents and the other server features need an Orca server. Sticks with a built-in band filter (the FlightAware Pro Stick Plus filters for 1090 MHz) are weak outside that band.
 
 The builds come from `.github/workflows/build.yml` on every push to `main`; the release is named after the version in `orca/__init__.py`. The executables are not code-signed yet, so Windows SmartScreen may warn on first run. The APK is debug-signed, so Android asks you to allow installs from that source.
 

@@ -2,6 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Optional: an RTL-SDR stick on USB OTG, opened by the "RTL-SDR driver" app -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <queries>
+        <package android:name="marto.rtl_tcp_andro" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="iqsrc" />
+        </intent>
+    </queries>
     <!-- Orca servers usually run on a local network without TLS -->
     <application
         android:label="Orca"

@@ -137,8 +137,9 @@ jobs:
       - name: Package
         run: |
           mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/Orca-Console-0.2.0.apk
-          (cd out && zip -q Orca-Android-APK.zip Orca-Console-0.2.0.apk && rm Orca-Console-0.2.0.apk)
+          VER="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' orca/__init__.py)"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "out/Orca-Console-$VER.apk"
+          (cd out && zip -q Orca-Android-APK.zip "Orca-Console-$VER.apk" && rm "Orca-Console-$VER.apk")
       - uses: actions/upload-artifact@v4
         with:
           name: android
@@ -174,6 +175,6 @@ jobs:
           - Orca-SDR-Edition.zip: source plus packaging/sdr-setup.sh, which installs SoapySDR and drivers for real receivers (RTL-SDR, Airspy, HackRF, USRP, RX888). Use config/site.sdr.yaml. For any machine with a supported SDR.
           - Orca-RaspberryPi.zip: source plus packaging/pi-setup.sh, which installs the SDR/GNSS stack and a systemd service so the Pi runs Orca headless on boot. Tested on Raspberry Pi OS (Pi 4/5).
           - Orca-ESP32-Firmware.zip: Arduino/PlatformIO firmware for an ESP32 field node (GNSS sensor + LoRa mesh / burst-chat relay). Flash with the Arduino IDE or PlatformIO. Set LoRa frequency for your ITU region.
-          - Orca-Android-APK.zip: the touch console for Android 7+. Tap Server to connect to your Orca PC; demo mode without one. Debug-signed: allow installs from this source.
+          - Orca-Android-APK.zip: the touch console for Android 7+. Tap Server to connect to your Orca PC, or Phone USB radio to use an RTL-SDR stick plugged into the phone (needs the free RTL-SDR driver app); demo mode without either. Debug-signed: allow installs from this source.
 
           The executables are not code-signed yet, so Windows SmartScreen may warn on first run."
