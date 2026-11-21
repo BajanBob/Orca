@@ -506,7 +506,8 @@ function showClass(r){
     .map(([k,v])=>`${esc(k)} ${(v*100).toFixed(0)}%`).join(' · ');
   const truth = r.sim_truth ? ` <span class="muted">(sim truth: ${esc(r.sim_truth)})</span>` : '';
   $('classOut').innerHTML = `Modulation: <b>${esc(r.label)}</b> at ${(r.confidence*100).toFixed(0)}% confidence${truth}<br><span class="muted">${bars}</span>`
-    + (r.emitter ? `<br><span class="muted">${r.emitter.match?`matched emitter ${esc(r.emitter.id)} (×${r.emitter.count})`:`new emitter ${esc(r.emitter.id)} added to library`}</span>` : '');
+    + (r.emitter ? `<br><span class="muted">${r.emitter.match?`matched emitter ${esc(r.emitter.id)} (×${r.emitter.count})`:`new emitter ${esc(r.emitter.id)} added to library`}</span>` : '')
+    + (r.satellite ? `<br><b>Satellite:</b> ${esc(r.satellite.band)} · likely <b>${esc(r.satellite.likely_standard)}</b> · ~${r.satellite.sr_est_msps} MSym/s (${r.satellite.sr_range_msps[0]}–${r.satellite.sr_range_msps[1]})<br><span class="muted">mod ${r.satellite.modulations.slice(0,4).join('/')} · video ${r.satellite.video_codecs.join(', ')} · audio ${r.satellite.audio_codecs.join(', ')}<br>${esc(r.satellite.note)}</span>` : '');
   if (r.emitter && !r.emitter.match && S.intel){ S.intel.emitters=[{id:r.emitter.id,label:r.label,center:S.marker||0,count:1},...(S.intel.emitters||[])]; renderIntel(); }
 }
 function renderHealth(){

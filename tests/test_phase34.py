@@ -354,3 +354,37 @@ def test_forecasts():
     assert 0 <= op["opening"] <= 1 and op["verdict"] in ("enhanced", "normal", "poor")
     assert forecast.tropo_opening(time.time(), pressure_hpa=1028, trend_hpa=1)["opening"] >= \
            forecast.tropo_opening(time.time(), pressure_hpa=1000, trend_hpa=-2)["opening"]
+
+
+# ---------------------------------------------------------------- satellite
+from orca import satcom
+
+
+def test_satcom_band_resolution_and_symbol_rate():
+    assert satcom.band_of(11.785e9).key == "ku"
+    assert satcom.band_of(3.95e9).key == "c"          # C-band wins over S in the overlap
+    assert satcom.band_of(19.5e9).key == "ka"
+    assert satcom.band_of(1.4e9).key == "l"
+    assert satcom.band_of(500e6) is None              # not a satellite band
+    # symbol rate = BW / (1 + rolloff): a 36 MHz carrier at 0.20 -> 30 MSym/s
+    assert abs(satcom.symbol_rate_from_bw(36e6, 0.20) - 30e6) < 1e4
+    assert abs(satcom.bw_from_symbol_rate(30e6, 0.20) - 36e6) < 1e4
+
+
+def test_satcom_profile_picks_standard_and_codecs():
+    ku = satcom.profile(11.785e9, 33e6)               # typical DTH transponder
+    assert ku.band == "Ku band" and ku.likely_standard == "DVB-S2" and ku.plausible
+    assert "HEVC (UHD/4K)" in ku.video_codecs
+    wide = satcom.profile(11.325e9, 240e6)            # wideband -> S2X
+    assert wide.likely_standard == "DVB-S2X"
+    x = satcom.profile(7.5e9, 20e6)                   # military band: identify, don't decode
+    assert "encrypt" in x.note.lower() or "military" in x.note.lower()
+    assert satcom.profile(500e6, 1e6) is None
+
+
+def test_satcom_recommendations():
+    r = satcom.recommendations()
+    assert "DVB-S2X" in r["demodulation"]["standards"]
+    assert "HEVC/H.265" in r["video_decode"]["support"]
+    assert "never descramble" in r["boundary"] or "not descramble" in r["boundary"] or \
+           "descramble it" in r["boundary"]

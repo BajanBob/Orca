@@ -97,6 +97,7 @@ orca/
   tropo.py        troposcatter experiment: link budget + SNR/fading/availability
   cognition.py    situation engine (fused assessment + prediction) + Ask Orca
   forecast.py     anomaly, emitter-reappearance and propagation forecasting
+  satcom.py       satellite downlink profiler (DVB-S2/S2X, symbol rate, codecs) + recommendations
   chat.py         burst chat over the mesh (clear on ham, encrypted on secure)
   secure/         government/defence module: policy, own-comms crypto, decoder
   server.py       FastAPI + WebSocket
@@ -111,6 +112,14 @@ A layer above the detectors that makes Orca feel like an analyst, not a dashboar
 - **Ask Orca**: type a question in the console — "what's the situation?", "any jamming this hour?", "strongest signal on 2m", "show GPS", "is the band open for tropo?" — and Orca answers and acts (tunes the spectrum, points you at the incident). Rule-based so it works with no internet; defers to Claude when configured.
 - **Forecasting** (`orca/forecast.py`): warns before things happen — spectrum-anomaly risk from the baseline trend, when a periodic emitter will next appear, and when a troposcatter path is likely to open (diurnal model, with a hook for real pressure/space-weather data).
 - **Claude reasoning** (optional): set `cognition.llm.enabled` and `ANTHROPIC_API_KEY` to have Claude write the situation assessment and course-of-action options, with a clean fall-back to the on-device assessment when offline.
+
+## Satellite downlink intelligence
+
+Orca characterises a satellite carrier it detects across **L, S, C, X, Ku and Ka bands** (`orca/satcom.py`). From the measured occupied bandwidth it estimates the **symbol rate** (symbol rate = bandwidth / (1 + roll-off)), infers the likely **DVB standard** (DVB-S / S2 / S2X) and **modulation** (QPSK, 8PSK, 16/32/64/128/256APSK), and lists the **video and audio codecs** the service uses (MPEG-2, H.264, HEVC; MPEG-1 L2, AC-3, DD+, the AAC family, Opus, aptX). When you classify a signal that sits in a satellite band, the console adds this satellite profile.
+
+C/Ku/Ka downlinks are block-downconverted by an LNB to the **L-band IF (950–2150 MHz)** that the SDR samples — the same downconverter chain Orca already plans for DC-to-Ku coverage.
+
+**Boundary:** Orca identifies carriers and, for **free-to-air** signals, can demux the MPEG transport stream and confirm the codecs. It **does not descramble conditional-access (pay-TV)** — it never defeats a conditional-access system, which keeps it lawful to sell. Recommended open tools: gr-dvbs2rx / leandvb (demod), TSDuck (transport stream), FFmpeg (codecs). See `satcom.recommendations()`.
 
 ## Phase 3: intelligence (built)
 

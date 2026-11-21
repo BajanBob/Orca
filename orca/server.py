@@ -29,6 +29,7 @@ from .intel import Classifier, EmitterLibrary
 from .mesh import MeshNode, NullTransport, RadioTransport, anonymise
 from . import tropo as tropo_mod
 from .oef import Event, Signer
+from . import satcom
 from .sdr import make_source
 from .secure import ClearFskDecoder, DecoderBank, KeyStore, SecureChannel, SecurePolicy
 from .spectrum import Spectrum
@@ -358,6 +359,9 @@ class Orca:
             fp = self.emitters.observe(iq, rate, em["f_center"], em["bw_occ"],
                                        res["label"], self.node)
             res["emitter"] = fp
+            sp = satcom.profile(em["f_center"], em["bw_occ"])
+            if sp:
+                res["satellite"] = sp.to_dict()
         self.audit.log("Beryl agent", f"classified {freq/1e6:.3f} MHz as {res['label']} "
                        f"({res['confidence']:.0%})")
         self.bus.publish("audit", self.audit.recent[0])
@@ -639,6 +643,10 @@ def create_app(cfg: dict) -> FastAPI:
         if c == "classify":
             f = float(msg.get("freq") or (orca.view["lo"] + orca.view["hi"]) / 2)
             return {"ok": True, "result": orca.classify_signal(f, float(msg.get("span", 0)))}
+        if c == "sat_profile":
+            sp = satcom.profile(float(msg["freq"]), float(msg.get("bw", 30e6)))
+            return {"ok": bool(sp), "profile": sp.to_dict() if sp else None,
+                    "recommendations": satcom.recommendations()}
         if c == "tropo_budget":
             return {"ok": True, "budget": orca.tropo_budget(msg)}
         if c == "tropo_start":
