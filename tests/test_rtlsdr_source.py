@@ -28,3 +28,11 @@ def test_make_source_rtlsdr_respects_gain_without_crashing():
     # gain given but no hardware -> still a clean sim fallback, no exception
     src = sdr.make_source({"kind": "rtlsdr", "gain_db": 40})
     assert src.key == "sim"
+
+
+def test_make_source_auto_falls_back_to_sim_without_hardware():
+    # auto probes rtlsdr then hackrf; with neither present it simulates, cleanly.
+    src = sdr.make_source({"kind": "auto", "scenarios": ["gnss_jam"]})
+    assert src.key == "sim"
+    assert "No SDR detected" in getattr(src, "fallback_note", "")
+    assert "gnss_jam" in src.scenarios          # scenarios still load in fallback

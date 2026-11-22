@@ -30,11 +30,17 @@ jobs:
           try {
             $base = 'https://ftp.osmocom.org/binaries/windows/rtl-sdr/'
             $idx = (Invoke-WebRequest -UseBasicParsing $base -TimeoutSec 60).Content
-            $names = [regex]::Matches($idx, 'rtl-sdr-w64[^"''<> ]*\.zip') | ForEach-Object { $_.Value } | Sort-Object -Unique
+            $all = [regex]::Matches($idx, 'href="([^"]+\.zip)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+            Write-Host ("index zips: " + ($all -join ', '))
+            $names = @($all | Where-Object { $_ -match '(w64|64bit|x64|win64)' })
+            if (-not $names) { $names = $all }
             if ($names) {
               $zip = $names[-1]
-              Write-Host "downloading $zip"
-              Invoke-WebRequest -UseBasicParsing ($base + $zip) -OutFile rtlsdr.zip -TimeoutSec 120
+              if ($zip -match '^https?://') { $url = $zip }
+              elseif ($zip.StartsWith('/')) { $url = 'https://ftp.osmocom.org' + $zip }
+              else { $url = $base + $zip }
+              Write-Host "downloading $url"
+              Invoke-WebRequest -UseBasicParsing $url -OutFile rtlsdr.zip -TimeoutSec 120
               Expand-Archive rtlsdr.zip -DestinationPath rtlextract -Force
               Get-ChildItem -Recurse rtlextract -Include $want | ForEach-Object { Copy-Item $_.FullName win_dll/ -Force -ErrorAction SilentlyContinue }
             } else { Write-Host "no w64 zip found in the osmocom index" }

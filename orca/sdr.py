@@ -258,6 +258,16 @@ def make_source(cfg: dict) -> Source:
     kind = cfg.get("kind", "sim")
     if kind == "sim":
         return _sim(cfg)
+    if kind == "auto":
+        # Plug-and-play: use a connected RTL-SDR or HackRF if present, else simulate.
+        for k in ("rtlsdr", "hackrf"):
+            try:
+                src = make_source({**cfg, "kind": k})
+                if getattr(src, "key", "sim") != "sim":
+                    return src
+            except Exception:
+                pass
+        return _sim(cfg, "No SDR detected on startup; running the simulator. Plug one in and restart.")
     if kind == "hackrf":
         try:
             from .hackrf_native import HackRFSource

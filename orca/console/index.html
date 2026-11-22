@@ -132,6 +132,22 @@ label input,label select{margin-top:2px}
       <button type="button" id="zOut" aria-label="Zoom out">− Zoom</button>
       <button type="button" id="zIn" aria-label="Zoom in">+ Zoom</button>
       <button type="button" id="hold">Max hold</button>
+      <input id="tuneIn" list="freqList" placeholder="Tune: 162.4M, 1575.42M, 14.074M…" data-tip="Type a frequency to jump the view there. Units: k/M/G or plain Hz." style="flex:1 1 150px;min-width:120px">
+      <datalist id="freqList">
+        <option value="137.1M">NOAA APT weather sat</option>
+        <option value="144.39M">APRS (Region 2)</option>
+        <option value="145.8M">ISS voice/APRS</option>
+        <option value="156.8M">Marine ch 16</option>
+        <option value="162.4M">NOAA weather radio</option>
+        <option value="161.975M">AIS 1</option>
+        <option value="1090M">ADS-B</option>
+        <option value="1575.42M">GPS L1</option>
+        <option value="1544.5M">Inmarsat / SARSAT</option>
+        <option value="137.9125M">NOAA APT 15</option>
+        <option value="118M">Airband low</option>
+        <option value="100M">FM broadcast</option>
+      </datalist>
+      <button type="button" id="tuneGo" class="pri" data-tip="Jump to the entered frequency">Tune</button>
       <span class="grow"></span>
       <select id="iqSecs" aria-label="IQ recording length"><option value="0.5">0.5 s</option><option value="1" selected>1 s</option><option value="2">2 s</option></select>
       <button type="button" class="pri" id="recIq">Record IQ</button>
@@ -1063,6 +1079,27 @@ const Wizard = (function(){
   // first-run: open once automatically
   try { if (!store.get('orca.seen')){ store.set('orca.seen','1'); setTimeout(open, 800); } } catch {}
   return { open };
+})();
+
+/* ---- direct frequency tune ---- */
+(function(){
+  function parseFreq(s){
+    if (!s) return null; s = String(s).trim().replace(/hz$/i,'').trim();
+    const m = s.match(/^([\d.]+)\s*([kmg])?$/i); if (!m) return null;
+    let f = parseFloat(m[1]); if (!isFinite(f)) return null;
+    const u = (m[2]||'').toLowerCase();
+    f *= u==='k'?1e3 : u==='m'?1e6 : u==='g'?1e9 : (f < 1e4 ? 1e6 : 1);  // bare small number => MHz
+    return f;
+  }
+  function go(){
+    const f = parseFreq($('tuneIn').value);
+    if (!f){ toast('Enter a frequency, e.g. 162.4M or 1575.42M'); return; }
+    const span = f < 30e6 ? 100e3 : f < 1e9 ? 2e6 : 20e6;   // sensible window per band
+    setView(Math.max(0, f - span/2), f + span/2);
+    S.marker = f; toast('Tuned to ' + fmtF(f));
+  }
+  $('tuneGo').onclick = go;
+  $('tuneIn').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); go(); } });
 })();
 
 /* ---- satellite finder: look-angle, phone sensors, alignment beep, identify ---- */

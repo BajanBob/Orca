@@ -12,7 +12,7 @@ data_dir: ./data               # keys, baseline, captures, audit log
 # Simulator (default): runs anywhere, with optional scenarios:
 #   gnss_jam, gnss_spoof, ch16_carrier, new_emitter, repeater_down
 sdr:
-  kind: sim
+  kind: auto            # auto-detect a plugged-in RTL-SDR or HackRF; simulator if none
   scenarios: [gnss_jam]
 # Real hardware - receive only. Pick ONE of the blocks below.
 #
