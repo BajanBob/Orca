@@ -112,6 +112,7 @@ label input,label select{margin-top:2px}
     <span class="pill"><span class="dot" id="connDot"></span><span id="conn">Connecting</span></span>
     <span class="pill"><span class="num" id="epm">0</span>&nbsp;events/min</span>
     <span class="pill num" id="clock">--:--:-- UTC</span>
+    <span class="pill num" id="ver" data-tip="Orca version running on the server">—</span>
     <button id="setupBtn" type="button" data-tip="First-run setup wizard: pick your radio, install drivers, choose a mode">Setup</button>
     <button id="srvBtn" type="button" data-tip="Point this console at an Orca server (host:port) or demo mode">Server</button>
     <button id="pauseBtn" type="button" data-tip="Freeze the live spectrum and event stream">Pause</button>
@@ -380,6 +381,7 @@ function onMsg(m){
       S.view = {lo:m.view.lo, hi:m.view.hi}; setChain(m.view); markRail(); drawAxis();
       S.nodes = m.nodes; S.sim = m.sim; S.protected = m.protected; S.scenarios = m.scenarios; renderScen();
       setSource(m.sim, m.source);
+      if (m.version) $('ver').textContent = 'v' + m.version;
       S.intel = m.intel; S.mesh = m.mesh; S.secure = m.secure; S.tropo = m.tropo; S.chat = m.chat; S.cognition = m.cognition; renderIntel(); renderChat(); renderCognition();
       if (m.tropo && m.tropo.predicted) { showBudget(m.tropo.predicted, 'tpOut'); $('tpRun').hidden=true; $('tpStop').hidden=false; }
       S.inc = new Map(m.incidents.map(i => [i.id, i])); S.events = m.events.reverse(); S.audit = m.audit; S.caps = m.captures;
