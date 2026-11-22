@@ -267,6 +267,15 @@ def make_source(cfg: dict) -> Source:
                                 max_rate=float(cfg.get("max_rate", 10e6)))
         except Exception as e:
             return _sim(cfg, f"HackRF requested but unavailable ({e}); running the simulator.")
+    if kind == "rtlsdr":
+        try:
+            from .rtlsdr_native import RtlSdrSource
+            g = cfg.get("gain_db")
+            return RtlSdrSource(gain_tenths_db=None if g is None else int(float(g) * 10),
+                                device_index=int(cfg.get("device_index", 0)),
+                                max_rate=float(cfg.get("max_rate", 2.4e6)))
+        except Exception as e:
+            return _sim(cfg, f"RTL-SDR requested but unavailable ({e}); running the simulator.")
     if kind == "soapy":
         try:
             return SoapySource(cfg.get("args", ""), cfg.get("gain"), float(cfg.get("max_rate", 2.4e6)))

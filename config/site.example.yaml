@@ -16,6 +16,13 @@ sdr:
   scenarios: [gnss_jam]
 # Real hardware - receive only. Pick ONE of the blocks below.
 #
+# RTL-SDR dongle on the Windows build (NESDR, RTL-SDR Blog, etc.; uses the bundled
+# rtlsdr.dll - no SoapySDR. Bind it to WinUSB with Zadig first):
+# sdr:
+#   kind: rtlsdr
+#   max_rate: 2.4e6
+#   gain_db: 40            # omit for automatic gain
+#
 # HackRF on the Windows build (no SoapySDR needed - uses the bundled hackrf.dll):
 # sdr:
 #   kind: hackrf
