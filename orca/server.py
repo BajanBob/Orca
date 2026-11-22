@@ -601,6 +601,20 @@ def create_app(cfg: dict) -> FastAPI:
         from . import dvb
         return {"tools": dvb.tools_status(), "running": orca.video.running, "info": orca.video.info}
 
+    @app.get("/api/lawful/status")
+    async def lawful_status():
+        from . import lawful
+        prof = lawful.from_config(orca.cfg, int(str(orca.cfg["site"]["region"]).replace("itu", "") or 2))
+        if not prof:
+            return {"enabled": False, "note": "Lawful-access profile disabled."}
+        return {"enabled": True, "warrant_ref": prof.warrant_ref, "services": prof.services,
+                "authority": prof.policy.authority, "audit_entries": len(prof.audit)}
+
+    @app.post("/api/lawful/enforcement")
+    async def lawful_enforcement(body: dict):
+        from . import lawful
+        return lawful.enforcement_report(body.get("carriers", []))
+
     @app.post("/api/video/start")
     async def video_start(body: dict):
         freq = float(body.get("freq", 0))

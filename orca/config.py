@@ -53,6 +53,12 @@ DEFAULTS = {
     # encryption. Provide authority (licence/tasking ref), licensed_bands and keys.
     "secure": {"enabled": False, "floor_hz": 148e6, "authority": "",
                "licensed_bands": [], "keys_hex": [], "baud": 1200},
+    # Government/regulator lawful-access profile. Disabled by default. Adds audit
+    # and warrant governance over the secure module's OWN-comms decryption; it
+    # never descrambles conditional-access content. Provide a warrant/tasking ref
+    # and the named services in scope.
+    "lawful": {"enabled": False, "warrant_ref": "", "services": [],
+               "valid_from": 0, "valid_to": 0},
     "agent": {"autorun_safe_steps": True, "llm": {"enabled": False, "model": "claude-sonnet-5-5"}},
     # Cognition: on-device situation engine + Ask Orca. Set llm.enabled (and the
     # ANTHROPIC_API_KEY env var) to add Claude reasoning on top, with on-device fallback.
