@@ -606,9 +606,12 @@ function renderHealth(){
 const SCEN = [['gnss_jam','GNSS jammer'],['gnss_spoof','GNSS spoofer'],['ch16_carrier','Stuck carrier ch 16'],['new_emitter','New 433 MHz emitter'],['repeater_down','Repeater down']];
 function setSource(sim, src){
   const b=$('srcBadge'); if(!b) return;
-  if (sim || !src || src.kind==='sim'){ b.className='srcbadge sim'; b.textContent='SIM'; }
-  else { b.className='srcbadge live'; const dev=(src.device||'').replace('driver=','').toUpperCase()||'SDR';
-    b.textContent='LIVE · '+dev; }
+  const baseTip='Signal source: SIM = built-in simulator, LIVE = a real SDR. A CAT radio (IC-9100) does not change this — only a wideband SDR (HackRF) drives the sweep.';
+  if (sim || !src || src.kind==='sim'){ b.className='srcbadge sim'; b.textContent='SIM';
+    if (src && src.note){ b.textContent='SIM ⚠'; b.setAttribute('data-tip', src.note+' — '+baseTip); if(S && !S._srcToldOnce){ S._srcToldOnce=true; toast(src.note); } }
+    else b.setAttribute('data-tip', baseTip);
+  } else { b.className='srcbadge live'; const dev=(src.device||'').replace('driver=','').replace('(native)','').trim().toUpperCase()||'SDR';
+    b.textContent='LIVE · '+dev; b.setAttribute('data-tip', 'Live from '+(src.device||'SDR')+'. '+baseTip); }
 }
 function renderScen(){ $('simCard').hidden = !S.sim; $('scen').innerHTML = SCEN.map(s => `<button type="button" class="${S.scenarios.includes(s[0])?'on':''}" data-sc="${s[0]}">${s[1]}</button>`).join(''); }
 function renderIntel(){

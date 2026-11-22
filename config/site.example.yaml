@@ -14,10 +14,20 @@ data_dir: ./data               # keys, baseline, captures, audit log
 sdr:
   kind: sim
   scenarios: [gnss_jam]
-# Real hardware through SoapySDR (receive only), for example:
+# Real hardware - receive only. Pick ONE of the blocks below.
+#
+# HackRF on the Windows build (no SoapySDR needed - uses the bundled hackrf.dll):
+# sdr:
+#   kind: hackrf
+#   max_rate: 10e6
+#   lna_gain: 16            # 0-40 step 8
+#   vga_gain: 20            # 0-62 step 2
+#   amp: 0                  # 1 = enable the front-end amp
+#
+# Any SDR through SoapySDR (Linux/Pi, or Windows from source with SoapySDR):
 # sdr:
 #   kind: soapy
-#   args: "driver=hackrf"      # or driver=rtlsdr, driver=airspy, driver=uhd, driver=rx888
+#   args: "driver=hackrf"   # or driver=rtlsdr, driver=airspy, driver=uhd, driver=rx888
 #   gain: 30                   # omit for AGC
 #   max_rate: 20e6
 

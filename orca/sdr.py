@@ -242,12 +242,34 @@ class SoapySource(Source):
             pass
 
 
+def _sim(cfg: dict, note: str = "") -> Source:
+    src = SimSource(seed=cfg.get("seed"))
+    src.scenarios.update(cfg.get("scenarios", []))
+    src.device_label = "simulator"
+    if note:
+        src.fallback_note = note          # surfaced in the UI badge so SIM is explained
+    return src
+
+
 def make_source(cfg: dict) -> Source:
+    """Build the IQ source. Real-hardware kinds fall back to the simulator with a
+    clear reason if the backend/library or device is unavailable, so the server
+    never crashes on a hardware config and the console can say why it's on SIM."""
     kind = cfg.get("kind", "sim")
     if kind == "sim":
-        src = SimSource(seed=cfg.get("seed"))
-        src.scenarios.update(cfg.get("scenarios", []))
-        return src
+        return _sim(cfg)
+    if kind == "hackrf":
+        try:
+            from .hackrf_native import HackRFSource
+            return HackRFSource(lna_gain=int(cfg.get("lna_gain", 16)),
+                                vga_gain=int(cfg.get("vga_gain", 20)),
+                                amp=int(cfg.get("amp", 0)),
+                                max_rate=float(cfg.get("max_rate", 10e6)))
+        except Exception as e:
+            return _sim(cfg, f"HackRF requested but unavailable ({e}); running the simulator.")
     if kind == "soapy":
-        return SoapySource(cfg.get("args", ""), cfg.get("gain"), float(cfg.get("max_rate", 2.4e6)))
+        try:
+            return SoapySource(cfg.get("args", ""), cfg.get("gain"), float(cfg.get("max_rate", 2.4e6)))
+        except Exception as e:
+            return _sim(cfg, f"SoapySDR requested but unavailable ({e}); running the simulator.")
     raise ValueError(f"unknown sdr kind {kind!r}")
