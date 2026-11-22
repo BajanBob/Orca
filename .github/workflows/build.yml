@@ -25,11 +25,14 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          try { vcpkg install hackrf:x64-windows } catch { Write-Host "vcpkg hackrf failed: $_" }
-          $bin = Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed/x64-windows/bin'
           New-Item -ItemType Directory -Force -Path win_dll | Out-Null
-          Copy-Item (Join-Path $bin 'hackrf.dll') win_dll/ -ErrorAction SilentlyContinue
-          Copy-Item (Join-Path $bin 'libusb-1.0.dll') win_dll/ -ErrorAction SilentlyContinue
+          $bash = "C:\msys64\usr\bin\bash.exe"
+          if (Test-Path $bash) {
+            & $bash -lc "pacman -Sy --noconfirm mingw-w64-x86_64-hackrf" 2>&1 | Write-Host
+            foreach ($d in 'hackrf.dll','libusb-1.0.dll','libwinpthread-1.dll') {
+              Copy-Item "C:\msys64\mingw64\bin\$d" win_dll/ -ErrorAction SilentlyContinue
+            }
+          }
           if (Test-Path win_dll/hackrf.dll) { Write-Host "hackrf.dll bundled" } else { Write-Host "no hackrf.dll - Windows build will be simulator-only" }
       - name: Build Orca server (single .exe)
         shell: pwsh
@@ -37,6 +40,7 @@ jobs:
           $bins = @()
           if (Test-Path win_dll/hackrf.dll)      { $bins += '--add-binary'; $bins += 'win_dll/hackrf.dll;.' }
           if (Test-Path win_dll/libusb-1.0.dll)  { $bins += '--add-binary'; $bins += 'win_dll/libusb-1.0.dll;.' }
+          if (Test-Path win_dll/libwinpthread-1.dll) { $bins += '--add-binary'; $bins += 'win_dll/libwinpthread-1.dll;.' }
           pyinstaller --noconfirm --clean --noupx --paths . --onefile --console --name orca-server `
             --add-data "orca/console;orca/console" --add-data "config;config" --add-data "orca/data;orca/data" `
             @bins `
@@ -48,6 +52,7 @@ jobs:
           $bins = @()
           if (Test-Path win_dll/hackrf.dll)      { $bins += '--add-binary'; $bins += 'win_dll/hackrf.dll;.' }
           if (Test-Path win_dll/libusb-1.0.dll)  { $bins += '--add-binary'; $bins += 'win_dll/libusb-1.0.dll;.' }
+          if (Test-Path win_dll/libwinpthread-1.dll) { $bins += '--add-binary'; $bins += 'win_dll/libwinpthread-1.dll;.' }
           pyinstaller --noconfirm --clean --noupx --paths . --onefile --windowed --name OrcaDesktop `
             --add-data "orca/console;orca/console" --add-data "config;config" --add-data "orca/data;orca/data" `
             @bins `
