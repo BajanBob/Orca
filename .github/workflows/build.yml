@@ -21,32 +21,25 @@ jobs:
         run: python -m pip install -r requirements.txt pyinstaller pywebview pyserial
       - name: Test
         run: python -m pytest -q
-      - name: Set up MSYS2 (for SDR runtime DLLs)
-        id: msys2
-        continue-on-error: true
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: false
-          install: mingw-w64-x86_64-rtl-sdr mingw-w64-x86_64-hackrf
-      - name: Collect SDR runtime DLLs (rtlsdr.dll, hackrf.dll)
+      - name: Collect RTL-SDR runtime DLL (rtlsdr.dll) from osmocom
         continue-on-error: true
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path win_dll | Out-Null
-          $loc = "${{ steps.msys2.outputs.msys2-location }}"
-          $bins = @()
-          if ($loc) { $bins += (Join-Path $loc 'mingw64\bin') }
-          $bins += 'C:\msys64\mingw64\bin'
-          foreach ($bin in $bins) {
-            if (Test-Path $bin) {
-              foreach ($d in 'rtlsdr.dll','librtlsdr.dll','hackrf.dll','libusb-1.0.dll','libwinpthread-1.dll') {
-                Copy-Item (Join-Path $bin $d) win_dll/ -ErrorAction SilentlyContinue
-              }
-            }
-          }
-          if (Test-Path win_dll/rtlsdr.dll) { Write-Host "rtlsdr.dll bundled" } else { Write-Host "no rtlsdr.dll" }
-          if (Test-Path win_dll/hackrf.dll) { Write-Host "hackrf.dll bundled" } else { Write-Host "no hackrf.dll" }
+          $want = 'rtlsdr.dll','librtlsdr.dll','libusb-1.0.dll','libwinpthread-1.dll','pthreadVC2.dll'
+          try {
+            $base = 'https://ftp.osmocom.org/binaries/windows/rtl-sdr/'
+            $idx = (Invoke-WebRequest -UseBasicParsing $base -TimeoutSec 60).Content
+            $names = [regex]::Matches($idx, 'rtl-sdr-w64[^"''<> ]*\.zip') | ForEach-Object { $_.Value } | Sort-Object -Unique
+            if ($names) {
+              $zip = $names[-1]
+              Write-Host "downloading $zip"
+              Invoke-WebRequest -UseBasicParsing ($base + $zip) -OutFile rtlsdr.zip -TimeoutSec 120
+              Expand-Archive rtlsdr.zip -DestinationPath rtlextract -Force
+              Get-ChildItem -Recurse rtlextract -Include $want | ForEach-Object { Copy-Item $_.FullName win_dll/ -Force -ErrorAction SilentlyContinue }
+            } else { Write-Host "no w64 zip found in the osmocom index" }
+          } catch { Write-Host "rtlsdr download failed: $_" }
+          if ((Test-Path win_dll/rtlsdr.dll) -or (Test-Path win_dll/librtlsdr.dll)) { Write-Host "RTL-SDR DLL bundled" } else { Write-Host "no rtlsdr.dll - Windows build simulator-only" }
           Get-ChildItem win_dll -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  bundling $($_.Name)" }
       - name: Build Orca server (single .exe)
         shell: pwsh
