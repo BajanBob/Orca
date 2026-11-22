@@ -49,9 +49,10 @@ def test_rigctld_still_needs_a_sound_card():
     assert drivers.USB_AUDIO in ifaces and e["plug_and_play"] is True
 
 
-def test_install_winusb_non_windows_is_noop():
-    import orca.drivers as d
-    r = d.install_winusb(0x0bda, 0x2838)
+def test_install_winusb_non_windows_is_noop(monkeypatch):
+    # force the non-Windows path so this passes on the Windows CI runner too
+    monkeypatch.setattr(drivers.sys, "platform", "linux")
+    r = drivers.install_winusb(0x0bda, 0x2838)
     assert r["ok"] is True and "libusb" in r["message"].lower()
 
 
