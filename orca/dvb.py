@@ -51,12 +51,19 @@ def _sr_hz(symrate) -> int:
 
 
 def build_pipeline(freq_hz: float, symrate, sdr: str = "hackrf",
-                   samp_rate: float = 2.4e6, demod: str = "leandvb") -> dict:
+                   samp_rate: float = 2.4e6, demod: str = "leandvb",
+                   low_snr: bool = False, extra: list | None = None) -> dict:
     """Build the three-stage shell pipeline (pure; no side effects).
 
     Returns {"source", "demod", "mux"} command lists joined by pipes by the
     decoder. The mux stage emits live WebM (VP8/Opus) on stdout, which a browser
     <video> plays directly - no HLS or extra JS needed in a Chromium webview.
+
+    low_snr widens the demod to the most tolerant standard settings (lowest
+    roll-off, all MODCODs incl. the S2X VLSNR range where the tool supports it);
+    `extra` appends tool-specific flags a deployment tunes for its dish/LNB. This
+    reaches the widest published range - it does not beat the physical demod
+    threshold; carriers below it are still DETECTED by the finder (satfinder.cn_estimate).
     """
     sr = _sr_hz(symrate)
     f = int(freq_hz)
@@ -68,10 +75,17 @@ def build_pipeline(freq_hz: float, symrate, sdr: str = "hackrf",
         source = ["hackrf_transfer", "-r", "-", "-f", str(f), "-s", str(srate), "-a", "1"]
         fmt = ["--s8"]                              # hackrf: signed 8-bit IQ
     if demod == "leandvb":
+        roll = "0.05" if low_snr else "0.20"
         dem = ["leandvb", "--standard", "DVB-S2", "-f", str(srate), "--sr", str(sr),
-               "--sampler", "rrc", "--roll-off", "0.20", *fmt, "--ts", "-"]
+               "--sampler", "rrc", "--roll-off", roll, *fmt, "--ts", "-"]
+        if low_snr:
+            dem += ["--fastlock", "--anf", "1"]     # aid lock on weak/narrow carriers
     else:
         dem = ["dvbs2-rx", "--freq", str(f), "--sym-rate", str(sr), "--out-fd", "1"]
+        if low_snr:
+            dem += ["--modcod-min", "0"]            # accept the lowest MODCODs/VLSNR
+    if extra:
+        dem += list(extra)
     mux = [FFMPEG, "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer",
            "-i", "pipe:0",
            "-map", "0:v:0?", "-map", "0:a:0?",
@@ -157,3 +171,43 @@ class FtaDecoder:
             except Exception:
                 pass
         self._procs = []
+
+
+async def capture_ts(freq_hz: float, symrate, sdr: str = "hackrf",
+                     samp_rate: float = 2.4e6, seconds: float = 3.0,
+                     low_snr: bool = True) -> bytes:
+    """Capture a few seconds of MPEG-TS (SDR -> demod) for identification.
+
+    Returns raw TS bytes to feed satfinder.parse_ts (service names, PIDs, orbital
+    position). Returns b"" when the demod tool is absent. No descrambling.
+    """
+    t = tools_status()
+    if not t["demod_ok"]:
+        return b""
+    p = build_pipeline(freq_hz, symrate, sdr, samp_rate, t["demod"], low_snr=low_snr)
+    try:
+        src = await asyncio.create_subprocess_exec(
+            *p["source"], stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        dem = await asyncio.create_subprocess_exec(
+            *p["demod"], stdin=src.stdout, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL)
+    except Exception:
+        return b""
+    buf = bytearray()
+    try:
+        async def _read():
+            while len(buf) < 4_000_000:
+                chunk = await dem.stdout.read(65536)
+                if not chunk:
+                    break
+                buf += chunk
+        await asyncio.wait_for(_read(), timeout=seconds)
+    except asyncio.TimeoutError:
+        pass
+    finally:
+        for pr in (dem, src):
+            try:
+                pr.terminate()
+            except Exception:
+                pass
+    return bytes(buf)

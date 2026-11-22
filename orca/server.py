@@ -601,6 +601,43 @@ def create_app(cfg: dict) -> FastAPI:
         from . import dvb
         return {"tools": dvb.tools_status(), "running": orca.video.running, "info": orca.video.info}
 
+    @app.get("/api/satfinder/catalog")
+    async def satfinder_catalog():
+        from . import satfinder
+        return {"satellites": [{"lon": s.lon, "name": s.name, "bands": s.bands}
+                               for s in satfinder.SAT_CATALOG]}
+
+    @app.get("/api/satfinder/lookangle")
+    async def satfinder_lookangle(lat: float, lon: float, sat_lon: float):
+        from . import satfinder
+        la = satfinder.look_angle(lat, lon, sat_lon)
+        la["nearest"] = satfinder.identify_satellite(sat_lon)
+        return la
+
+    @app.get("/api/satfinder/signal")
+    async def satfinder_signal(freq: float):
+        from . import satfinder
+        src = orca.src
+        n = 8192
+        if hasattr(src, "modulated_iq"):
+            iq, _, _ = src.modulated_iq(freq, 2.4e6, n)
+        else:
+            iq = await src.capture(freq, 2.4e6, n)
+        return satfinder.cn_estimate(iq, 2.4e6)
+
+    @app.post("/api/satfinder/identify")
+    async def satfinder_identify(body: dict):
+        from . import dvb, satfinder
+        t = dvb.tools_status()
+        if not t["demod_ok"]:
+            return {"ok": False, "message": "Install a DVB-S2 demodulator (leandvb/gr-dvbs2rx) "
+                    "to read service names and PIDs. Look-angle and signal strength work without it."}
+        ts = await dvb.capture_ts(float(body.get("freq", 0)), body.get("symrate", 27.5),
+                                  sdr=orca.video.sdr, seconds=float(body.get("seconds", 3)))
+        if not ts:
+            return {"ok": False, "message": "No transport stream locked - peak the dish and retry."}
+        return {"ok": True, **satfinder.parse_ts(ts)}
+
     @app.get("/api/lawful/status")
     async def lawful_status():
         from . import lawful

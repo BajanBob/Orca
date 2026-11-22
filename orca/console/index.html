@@ -167,6 +167,26 @@ label input,label select{margin-top:2px}
       <div id="mediaNote" class="muted">Tune a band that carries audio or video, pick a mode, then Listen.</div>
       <div id="modeHelp" class="note" hidden></div>
     </section>
+    <section class="card" id="satCard">
+      <h2>Satellite finder <small>azimuth · elevation · beep</small></h2>
+      <div class="tools">
+        <label data-tip="Choose a satellite; its orbital position sets the target bearing">Satellite
+          <select id="satSel"><option value="">— pick —</option></select></label>
+        <label data-tip="Or type the orbital position, °East (west negative)">°E
+          <input id="satLon" type="number" step="0.1" style="width:72px" placeholder="e.g. -61"></label>
+        <button type="button" id="satLoc" data-tip="Use this device's GPS for your location">📍 My location</button>
+        <button type="button" id="satSensors" data-tip="Turn on the phone compass and tilt sensors">Enable sensors</button>
+      </div>
+      <div id="satTarget" class="muted">Pick a satellite and tap “My location”.</div>
+      <div class="satdial" id="satDial"><div id="satArrow">↑</div><div id="satErr" class="muted"></div></div>
+      <div class="tools">
+        <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" id="satBeep" checked style="min-height:0;width:auto"> Beep</label>
+        <span class="vu" style="flex:1"><span id="satStrBar"></span></span>
+        <button type="button" class="pri" id="satIdent" data-tip="Read service names, video/audio PIDs and the satellite name (free-to-air)">Identify</button>
+      </div>
+      <div id="satSignal" class="muted"></div>
+      <div id="satIdentOut" class="note" hidden></div>
+    </section>
     <section class="card">
       <h2>Incidents <small id="incCount"></small></h2>
       <div class="queue" id="queue"></div>
@@ -269,6 +289,10 @@ label input,label select{margin-top:2px}
   .wiz .steps i.on{background:var(--acc)}
   .wiz code{background:#05070a;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
   .pnp{color:#6e6}.needs{color:#fc6}
+  .satdial{position:relative;width:150px;height:150px;margin:8px auto;border-radius:50%;
+    border:2px solid var(--line);display:flex;align-items:center;justify-content:center;background:#05070a}
+  #satArrow{font-size:52px;line-height:1;transition:transform .12s,color .12s;color:#fc6}
+  #satErr{position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:12px}
 </style>
 
 <script>
@@ -1024,6 +1048,104 @@ const Wizard = (function(){
   // first-run: open once automatically
   try { if (!store.get('orca.seen')){ store.set('orca.seen','1'); setTimeout(open, 800); } } catch {}
   return { open };
+})();
+
+/* ---- satellite finder: look-angle, phone sensors, alignment beep, identify ---- */
+(function(){
+  const R=6378.137, G=42164.0, d2r=Math.PI/180, r2d=180/Math.PI;
+  let here=null, target=null, heading=null, tilt=null, actx=null, osc=null, gain=null, sigTimer=0, strength=0;
+
+  function lookAngle(lat, lon, slon){
+    const phi=lat*d2r, le=lon*d2r, ls=slon*d2r;
+    const sat=[G*Math.cos(ls), G*Math.sin(ls), 0];
+    const obs=[R*Math.cos(phi)*Math.cos(le), R*Math.cos(phi)*Math.sin(le), R*Math.sin(phi)];
+    const dd=[sat[0]-obs[0], sat[1]-obs[1], sat[2]-obs[2]];
+    const e=[-Math.sin(le), Math.cos(le), 0];
+    const n=[-Math.sin(phi)*Math.cos(le), -Math.sin(phi)*Math.sin(le), Math.cos(phi)];
+    const u=[Math.cos(phi)*Math.cos(le), Math.cos(phi)*Math.sin(le), Math.sin(phi)];
+    const dE=dd[0]*e[0]+dd[1]*e[1]+dd[2]*e[2], dN=dd[0]*n[0]+dd[1]*n[1]+dd[2]*n[2], dU=dd[0]*u[0]+dd[1]*u[1]+dd[2]*u[2];
+    const az=((Math.atan2(dE,dN)*r2d)+360)%360, el=Math.atan2(dU,Math.hypot(dE,dN))*r2d;
+    const dl=(slon-lon)*d2r, skew = lat ? Math.atan2(Math.sin(dl), Math.tan(phi))*r2d : 0;
+    return {az:+az.toFixed(1), el:+el.toFixed(1), skew:+skew.toFixed(1), visible:el>0};
+  }
+  async function loadCat(){ try{ const r=await fetch((BASE||'')+'/api/satfinder/catalog'); if(r.ok){
+    const c=(await r.json()).satellites; $('satSel').innerHTML='<option value="">— pick —</option>'+
+      c.map(s=>`<option value="${s.lon}">${esc(s.name)} · ${esc(s.bands)}</option>`).join(''); } }catch{} }
+  if (BASE) loadCat();
+
+  function curLon(){ const v=$('satSel').value||$('satLon').value; return v===''?null:+v; }
+  function recompute(){
+    const slon=curLon(); if (here==null||slon==null){ $('satTarget').textContent= here==null?'Tap “My location”.':'Pick a satellite or enter °E.'; target=null; return; }
+    target=lookAngle(here.lat, here.lon, slon);
+    $('satTarget').innerHTML = target.visible
+      ? `Aim: <b>${target.az}° az</b> · <b>${target.el}° elevation</b> · LNB skew ${target.skew}°. <span class="muted">(you at ${here.lat.toFixed(2)}, ${here.lon.toFixed(2)})</span>`
+      : `<span class="needs">Below the horizon from your location — not reachable.</span>`;
+  }
+  $('satSel').onchange = ()=>{ if($('satSel').value) $('satLon').value=''; recompute(); };
+  $('satLon').oninput = recompute;
+  $('satLoc').onclick = ()=>{ if(!navigator.geolocation){ toast('No geolocation on this device'); return; }
+    navigator.geolocation.getCurrentPosition(p=>{ here={lat:p.coords.latitude, lon:p.coords.longitude}; recompute(); },
+      ()=>toast('Location permission denied'), {enableHighAccuracy:true, timeout:8000}); };
+
+  function onOrient(e){
+    heading = (typeof e.webkitCompassHeading==='number') ? e.webkitCompassHeading
+            : (e.alpha!=null ? (360-e.alpha)%360 : null);     // alpha->compass (approx)
+    tilt = e.beta!=null ? e.beta : null;                       // front/back tilt ~ elevation
+    update();
+  }
+  $('satSensors').onclick = async ()=>{
+    try{ if (typeof DeviceOrientationEvent!=='undefined' && DeviceOrientationEvent.requestPermission){
+        const r=await DeviceOrientationEvent.requestPermission(); if(r!=='granted'){ toast('Sensor permission denied'); return; } }
+      addEventListener('deviceorientationabsolute', onOrient, true);
+      addEventListener('deviceorientation', onOrient, true);
+      $('satSensors').textContent='Sensors on';
+    }catch{ toast('Sensors unavailable on this device'); }
+  };
+
+  function beep(err){ // err 0..1 (0 = perfectly aligned); faster+higher as aligned, louder with signal
+    if (!$('satBeep').checked || !target || !target.visible){ stopBeep(); return; }
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    if (!osc){ osc=actx.createOscillator(); gain=actx.createGain(); osc.connect(gain).connect(actx.destination); gain.gain.value=0; osc.start(); }
+    const align=1-err; osc.frequency.value = 400 + align*900 + strength*300;
+    const rate = 1 + align*8;  // pulses/sec
+    const on = (performance.now()/1000*rate)%1 < 0.5;
+    gain.gain.value = on ? (0.03 + align*0.05 + strength*0.05) : 0;
+  }
+  function stopBeep(){ if(gain) gain.gain.value=0; }
+  let raf=0;
+  function update(){
+    const arr=$('satArrow'), er=$('satErr');
+    if (!target || !target.visible || heading==null){ arr.style.color='#555'; er.textContent = heading==null?'Enable sensors':''; return; }
+    let dAz=((target.az-heading+540)%360)-180;         // -180..180, 0 = on bearing
+    const dEl = (tilt==null)?0:(target.el-tilt);
+    const errA=Math.min(1, Math.abs(dAz)/90), errE=Math.min(1,Math.abs(dEl)/45);
+    const err=Math.max(errA, (tilt==null?0:errE));
+    arr.style.transform=`rotate(${dAz}deg)`;
+    arr.style.color = err<0.04 ? '#6e6' : err<0.2 ? '#fc6' : '#f66';
+    arr.textContent = err<0.04 ? '✓' : '↑';
+    er.textContent = `Δaz ${dAz.toFixed(0)}°${tilt!=null?` · Δel ${dEl.toFixed(0)}°`:''}`;
+    cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>beep(err));
+  }
+  async function pollSignal(){
+    if (!BASE || !S.live || !target || !target.visible){ strength=0; return; }
+    try{ const r=await fetch(BASE+'/api/satfinder/signal?freq='+((S.view.lo+S.view.hi)/2)); if(r.ok){
+      const s=await r.json(); strength=s.strength||0; $('satStrBar').style.width=Math.round(strength*100)+'%';
+      $('satSignal').textContent=`C/N ${s.cn_db} dB · strength ${(strength*100).toFixed(0)}%${s.locked_hint?' · carrier detected':''}`; } }catch{}
+  }
+  sigTimer=setInterval(pollSignal, 1200);
+
+  $('satIdent').onclick = async ()=>{
+    if (!BASE){ toast('Identification needs a connected Orca server'); return; }
+    $('satIdentOut').hidden=false; $('satIdentOut').textContent='Reading transport stream…';
+    try{ const r=await fetch(BASE+'/api/satfinder/identify',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({freq:(S.view.lo+S.view.hi)/2, symrate:+($('vidSr')?.value||27.5)})});
+      const d=await r.json();
+      if(!d.ok){ $('satIdentOut').textContent=d.message||'Not locked'; return; }
+      const sats = curLon()!=null ? '' : '';
+      const svc=(d.services||[]).map(s=>`• <b>${esc(s.name||('SID '+s.program))}</b>${s.provider?` <span class="muted">(${esc(s.provider)})</span>`:''} — VID ${s.video_pid??'—'}, audio ${(s.audio_pids||[]).join('/')||'—'}${s.encrypted?' <span class="needs">[encrypted — identify only]</span>':' <span class="pnp">[FTA]</span>'}`).join('<br>');
+      $('satIdentOut').innerHTML = `<b>${esc(d.network_name||'Network')}</b>${d.orbital_pos!=null?` · ${d.orbital_pos}°`:''}<br>${svc||'No services parsed'}`;
+    }catch{ $('satIdentOut').textContent='Could not reach the server'; }
+  };
 })();
 }
 </script>

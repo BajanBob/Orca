@@ -38,3 +38,27 @@ button is enabled only when `leandvb`/`gr-dvbs2rx` **and** `ffmpeg` are installe
 
 The leandvb flags in `orca/dvb.py` (`build_pipeline`) are a starting template; a real
 dish/LNB/MODCOD setup tunes sample rate, roll-off and gain. Receive-only throughout.
+
+## Satellite finder (in the console + APK)
+
+The **Satellite finder** card aims a dish/LNB at a geostationary satellite:
+
+- Pick a satellite (or type its orbital position, °East); the phone's **GPS** gives
+  your location and Orca computes **true azimuth, elevation and LNB skew**
+  (`satfinder.look_angle`, same math in Python and in the console JS so it works
+  offline).
+- Turn on the phone's **compass + tilt sensors**: a dial arrow and a tone guide you,
+  the **beep getting faster and higher as you align** (and louder as signal rises).
+- Signal strength is a **C/N estimate** (`satfinder.cn_estimate`) that detects a
+  carrier's presence *below the demod lock threshold* — that's how you peak a dish.
+  Works on L/C/Ku/Ka through the LNB's L-band IF.
+- **Identify** reads the locked transport stream (`satfinder.parse_ts`) for service
+  names, **video/audio PIDs**, the network name and the orbital position — automatic
+  PID/VID/name identification. Encrypted services are listed as such and never
+  descrambled.
+
+Endpoints: `/api/satfinder/catalog`, `/api/satfinder/lookangle`,
+`/api/satfinder/signal`, `/api/satfinder/identify`. For weak carriers, the decode
+path has a `low_snr` option (lowest roll-off, widest MODCODs incl. the S2X VLSNR
+range where the tool supports it); it reaches the widest *published* range but cannot
+beat the physical demod threshold — below that, the finder still detects the carrier.

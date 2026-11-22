@@ -49,6 +49,22 @@ def test_start_refuses_ca_without_spawning():
     assert d.running is False and d._procs == []
 
 
+def test_low_snr_widens_demod():
+    p = dvb.build_pipeline(11.785e9, 1.0, sdr="hackrf", low_snr=True)
+    assert "--roll-off" in p["demod"] and "0.05" in p["demod"]
+    assert "--fastlock" in p["demod"]
+
+
+def test_extra_flags_appended():
+    p = dvb.build_pipeline(1e9, 2.0, extra=["--custom", "x"])
+    assert p["demod"][-2:] == ["--custom", "x"]
+
+
+def test_capture_ts_without_tools_returns_empty():
+    import asyncio
+    assert asyncio.run(dvb.capture_ts(11.785e9, 27.5)) == b""
+
+
 def test_tools_status_shape():
     t = dvb.tools_status()
     assert set(t) >= {"demod", "demod_ok", "ffmpeg", "sdr_capture", "ready"}
