@@ -496,6 +496,9 @@ class Orca:
                 "events": list(self.events)[-200:], "audit": self.audit.recent[:100],
                 "captures": self.captures.list(), "scenarios": sorted(self.scenarios),
                 "sim": self.cfg["sdr"]["kind"] == "sim",
+                "source": {"kind": self.cfg["sdr"].get("kind", "sim"),
+                           "device": (self.cfg["sdr"].get("args", "") or "simulator")
+                           if self.cfg["sdr"].get("kind") != "sim" else "simulator"},
                 "transmit": dict(zip(("ok", "why"), self.aprs.can_transmit())),
                 "intel": {"classes": self.classifier.classes, "decoders": ["clear-fsk"],
                           "emitters": self.emitters.list()[:30]},
