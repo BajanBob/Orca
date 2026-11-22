@@ -67,16 +67,23 @@ class Sat:
     bands: str
 
 
-# A representative global set; editable/extendable per deployment.
+# Representative global set, Americas arc first (highest elevation from the
+# Caribbean); editable/extendable per deployment.
 SAT_CATALOG = [
-    Sat(19.2, "SES Astra 1 (19.2E)", "Ku"), Sat(13.0, "Eutelsat Hot Bird (13E)", "Ku"),
-    Sat(28.2, "SES Astra 2 (28.2E)", "Ku"), Sat(23.5, "SES Astra 3 (23.5E)", "Ku"),
-    Sat(9.0, "Eutelsat 9B (9E)", "Ku"), Sat(7.0, "Eutelsat 7 (7E)", "Ku/C"),
-    Sat(-0.8, "Thor/Intelsat (0.8W)", "Ku"), Sat(-30.0, "Hispasat (30W)", "Ku/C"),
-    Sat(-43.0, "Intelsat 11 (43W)", "C/Ku"), Sat(-61.0, "Amazonas/Star One (61W)", "C/Ku"),
-    Sat(-101.0, "SES/Galaxy (101W)", "C/Ku"), Sat(-119.0, "Galaxy 23 (119W)", "Ku"),
-    Sat(100.5, "AsiaSat 5 (100.5E)", "C/Ku"), Sat(108.2, "Telkom/SES-7 (108E)", "C/Ku"),
+    Sat(-30.0, "Hispasat 30W", "Ku/C"), Sat(-43.0, "Intelsat 11 (43W)", "C/Ku"),
+    Sat(-45.0, "Intelsat 14 (45W)", "C/Ku"), Sat(-50.0, "Intelsat 1R/Star One (50W)", "C/Ku"),
+    Sat(-53.0, "Intelsat 23 (53W)", "C/Ku"), Sat(-55.5, "Intelsat 34 (55.5W)", "C/Ku"),
+    Sat(-58.0, "Intelsat 21 (58W)", "C/Ku"), Sat(-61.0, "Amazonas/Star One (61W)", "C/Ku"),
+    Sat(-63.0, "Telstar 14 (63W)", "C/Ku"), Sat(-65.0, "Star One C1 (65W)", "C/Ku"),
+    Sat(-67.0, "Intelsat 9 (67W)", "C/Ku"), Sat(-70.0, "Star One C2 (70W)", "C/Ku"),
+    Sat(-87.0, "SES-2 (87W)", "C/Ku"), Sat(-101.0, "SES-3/Galaxy (101W)", "C/Ku"),
+    Sat(-119.0, "Galaxy 23 (119W)", "Ku"),
+    Sat(-0.8, "Thor/Intelsat (0.8W)", "Ku"), Sat(7.0, "Eutelsat 7 (7E)", "Ku/C"),
+    Sat(9.0, "Eutelsat 9B (9E)", "Ku"), Sat(13.0, "Eutelsat Hot Bird (13E)", "Ku"),
+    Sat(19.2, "SES Astra 1 (19.2E)", "Ku"), Sat(23.5, "SES Astra 3 (23.5E)", "Ku"),
+    Sat(28.2, "SES Astra 2 (28.2E)", "Ku"),
     Sat(83.0, "Insat/GSAT (83E)", "C/Ku"), Sat(90.0, "Yamal (90E)", "C/Ku"),
+    Sat(100.5, "AsiaSat 5 (100.5E)", "C/Ku"), Sat(108.2, "Telkom/SES-7 (108E)", "C/Ku"),
 ]
 
 

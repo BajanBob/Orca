@@ -1122,10 +1122,29 @@ const Wizard = (function(){
     const dl=(slon-lon)*d2r, skew = lat ? Math.atan2(Math.sin(dl), Math.tan(phi))*r2d : 0;
     return {az:+az.toFixed(1), el:+el.toFixed(1), skew:+skew.toFixed(1), visible:el>0};
   }
-  async function loadCat(){ try{ const r=await fetch((BASE||'')+'/api/satfinder/catalog'); if(r.ok){
-    const c=(await r.json()).satellites; $('satSel').innerHTML='<option value="">— pick —</option>'+
-      c.map(s=>`<option value="${s.lon}">${esc(s.name)} · ${esc(s.bands)}</option>`).join(''); } }catch{} }
-  if (BASE) loadCat();
+  // Built-in catalog so the list is always populated (works offline, no server needed).
+  // Caribbean/Americas arc first (highest elevation from the West Indies), then global.
+  const SATS = [
+    [-30.0,"Hispasat 30W","Ku/C"],[-43.0,"Intelsat 11 (43W)","C/Ku"],
+    [-45.0,"Intelsat 14 (45W)","C/Ku"],[-50.0,"Intelsat 1R/Star One (50W)","C/Ku"],
+    [-53.0,"Intelsat 23 (53W)","C/Ku"],[-55.5,"Intelsat 34 (55.5W)","C/Ku"],
+    [-58.0,"Intelsat 21 (58W)","C/Ku"],[-61.0,"Amazonas/Star One (61W)","C/Ku"],
+    [-63.0,"Telstar 14 (63W)","C/Ku"],[-65.0,"Star One C1 (65W)","C/Ku"],
+    [-67.0,"Intelsat 9 (67W)","C/Ku"],[-70.0,"Star One C2 (70W)","C/Ku"],
+    [-87.0,"SES-2 (87W)","C/Ku"],[-101.0,"SES-3/Galaxy (101W)","C/Ku"],
+    [-119.0,"Galaxy 23 (119W)","Ku"],
+    [-0.8,"Thor/Intelsat (0.8W)","Ku"],[7.0,"Eutelsat 7 (7E)","Ku/C"],
+    [9.0,"Eutelsat 9B (9E)","Ku"],[13.0,"Eutelsat Hot Bird (13E)","Ku"],
+    [19.2,"SES Astra 1 (19.2E)","Ku"],[23.5,"SES Astra 3 (23.5E)","Ku"],
+    [28.2,"SES Astra 2 (28.2E)","Ku"],
+    [83.0,"Insat/GSAT (83E)","C/Ku"],[90.0,"Yamal (90E)","C/Ku"],
+    [100.5,"AsiaSat 5 (100.5E)","C/Ku"],[108.2,"Telkom/SES-7 (108E)","C/Ku"]];
+  function fillSats(list){ $('satSel').innerHTML='<option value="">— pick —</option>'+
+    list.map(s=>`<option value="${s[0]}">${esc(s[1])} · ${esc(s[2])}</option>`).join(''); }
+  fillSats(SATS);
+  // If a server is reachable, let its catalog override the built-in one.
+  (async()=>{ if(!BASE) return; try{ const r=await fetch(BASE+'/api/satfinder/catalog');
+    if(r.ok){ const c=(await r.json()).satellites; if(c&&c.length) fillSats(c.map(s=>[s.lon,s.name,s.bands])); } }catch{} })();
 
   function curLon(){ const v=$('satSel').value||$('satLon').value; return v===''?null:+v; }
   function recompute(){
